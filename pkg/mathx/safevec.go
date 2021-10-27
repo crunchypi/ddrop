@@ -3,7 +3,6 @@ package mathx
 import (
 	"math"
 	"math/rand"
-	"sync"
 	"time"
 )
 
@@ -27,10 +26,10 @@ type Distancer interface {
 
 // SafeVec is a read-only wrapper around an []float64; the intent is
 // for it to be safe to pass around in a highly concurrent context.
-// Note; it implements the 'Distancer' interface in this pkg.
+// Note 1; it implements the 'Distancer' interface in this pkg.
+// Note 2; no locking as it is read-only.
 type SafeVec struct {
 	vec []float64
-	sync.RWMutex
 }
 
 // NewSafeVec is a constructor for SafeVec, which is initialized with
@@ -57,15 +56,11 @@ func NewSafeVecRand(dim uint) *SafeVec {
 
 // Dim exposes the dimension of the underlying vector.
 func (v *SafeVec) Dim() uint {
-	v.RLock()
-	defer v.RUnlock()
 	return uint(len(v.vec))
 }
 
 // Clone returns a clone of the type.
 func (v *SafeVec) Clone() *SafeVec {
-	v.RLock()
-	defer v.RUnlock()
 	return NewSafeVec(v.vec...)
 }
 
@@ -73,9 +68,6 @@ func (v *SafeVec) Clone() *SafeVec {
 // Accepts a func which receives the index and value (i.e a range loop)
 // of each element -- this func can return false to stop the itaration.
 func (v *SafeVec) Iter(f func(uint, float64) bool) {
-	v.RLock()
-	defer v.RUnlock()
-
 	for i, elm := range v.vec {
 		if !f(uint(i), elm) {
 			return
@@ -85,9 +77,6 @@ func (v *SafeVec) Iter(f func(uint, float64) bool) {
 
 // Eq does an equality check with the other SafeVec.
 func (v *SafeVec) Eq(other *SafeVec) bool {
-	v.RLock()
-	defer v.RUnlock()
-
 	if uint(len(v.vec)) != other.Dim() {
 		return false
 	}
@@ -103,8 +92,6 @@ func (v *SafeVec) Eq(other *SafeVec) bool {
 // In checks if this SafeVec is contained in a given slice. Equality
 // checks are done with SafeVec.Eq(...), so not particularly fast.
 func (v *SafeVec) In(others []*SafeVec) bool {
-	v.RLock()
-	defer v.RUnlock()
 	for i := range others {
 		if v.Eq(others[i]) {
 			return true
@@ -116,8 +103,6 @@ func (v *SafeVec) In(others []*SafeVec) bool {
 // Peek returns the element of the underlying []float64 at a given index.
 // Will return false if the index is out-of-bounds.
 func (v *SafeVec) Peek(index uint) (float64, bool) {
-	v.RLock()
-	defer v.RUnlock()
 	l := uint(len(v.vec))
 	if index >= l || index < 0 {
 		return 0, false
@@ -128,9 +113,6 @@ func (v *SafeVec) Peek(index uint) (float64, bool) {
 // Euclidean computes the Euclidean distance to another vec that implements
 // the Distancer interface (this pkg). Returns false if dimensions are neq.
 func (v *SafeVec) Euclidean(other Distancer) (float64, bool) {
-	v.RLock()
-	defer v.RUnlock()
-
 	if other == nil || uint(len(v.vec)) != other.Dim() {
 		return 0, false
 	}
