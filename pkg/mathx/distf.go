@@ -1,5 +1,9 @@
 package mathx
 
+/*
+File contains distance functions that are used with []float64.
+*/
+
 import "math"
 
 // EuclideanDistance finds the Euclidean distance between two vectors.
@@ -26,7 +30,7 @@ func norm(vec []float64) float64 {
 }
 
 // CosineSimilarity finds the cosine similarity of two vectors.
-// Returns false on two conditions if:
+// Returns false on two conditions, if:
 //	(A): len(v1) != len(v2)
 //	(B): One of the vectors is a zero vector.
 func CosineSimilarity(v1, v2 []float64) (float64, bool) {
@@ -34,7 +38,7 @@ func CosineSimilarity(v1, v2 []float64) (float64, bool) {
 		return 0, false
 	}
 	norm1, norm2 := norm(v1), norm(v2)
-	if norm1 == 0 && norm2 == 0 {
+	if norm1 == 0 || norm2 == 0 {
 		return 0, false
 	}
 	var dot float64
