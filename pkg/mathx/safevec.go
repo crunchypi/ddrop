@@ -15,7 +15,7 @@ func init() {
 // be used with some underlying vector such as []float64 or variants.
 type Distancer interface {
 	// Euclidean computes the Euclidean distance to another Distancer.
-	Euclidean(other Distancer) (float64, bool)
+	EuclideanDistance(other Distancer) (float64, bool)
 
 	// Peek attempts to return an element of an underlying vector at
 	// the given index. False return signals out-of-bounds.
@@ -110,9 +110,11 @@ func (v *SafeVec) Peek(index uint) (float64, bool) {
 	return v.vec[index], true
 }
 
-// Euclidean computes the Euclidean distance to another vec that implements
-// the Distancer interface (this pkg). Returns false if dimensions are neq.
-func (v *SafeVec) Euclidean(other Distancer) (float64, bool) {
+// EuclideanDistance computes the Euclidean distance to another vec that
+// implements the Distancer interface (this pkg).
+// False condition if:
+//	neq dimension for the two vecs.
+func (v *SafeVec) EuclideanDistance(other Distancer) (float64, bool) {
 	if other == nil || uint(len(v.vec)) != other.Dim() {
 		return 0, false
 	}
@@ -124,8 +126,6 @@ func (v *SafeVec) Euclidean(other Distancer) (float64, bool) {
 			panic("ehh")
 		}
 		r += (vi - wi) * (vi - wi)
-		//x := vi - wi
-		//r += x * x
 	}
 
 	return math.Sqrt(r), true

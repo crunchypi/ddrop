@@ -31,7 +31,7 @@ func TestSafeVecEucDist(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		res, _ := c.vec1.Euclidean(c.vec2)
+		res, _ := c.vec1.EuclideanDistance(c.vec2)
 		res = RoundF64(res, 4) // 4 decimal places.
 
 		if res != c.answer {
