@@ -14,14 +14,27 @@ func init() {
 // distance functions such as Euclidean or Cosine. This is meant to
 // be used with some underlying vector such as []float64 or variants.
 type Distancer interface {
-	// Euclidean computes the Euclidean distance to another Distancer.
+	// EuclideanDistance computes the Euclidean distance to another vec that
+	// implements the Distancer interface (this pkg).
+	// False condition if:
+	//	neq dimension for the two vecs.
 	EuclideanDistance(other Distancer) (float64, bool)
+
+	// CosineSimilarity finds the cosine similarity between this vector and the
+	// other. Returns false on two conditions, if;
+	//	(A): neq dimensions.
+	//	(B): one of the vectors is a zero vector.
+	CosineSimilarity(other Distancer) (float64, bool)
 
 	// Peek attempts to return an element of an underlying vector at
 	// the given index. False return signals out-of-bounds.
 	Peek(index uint) (float64, bool)
 	// Dim is intended to return the dimension of an underlying vector.
 	Dim() uint
+	// Norm is the norm of the internal vector.
+	Norm() float64
+
+	// NOTE: add id?
 }
 
 // SafeVec is a read-only wrapper around an []float64; the intent is
@@ -29,7 +42,9 @@ type Distancer interface {
 // Note 1; it implements the 'Distancer' interface in this pkg.
 // Note 2; no locking as it is read-only.
 type SafeVec struct {
-	vec []float64
+	vec     []float64
+	norm    float64 // Lazy precomputation.
+	normSet bool
 }
 
 // NewSafeVec is a constructor for SafeVec, which is initialized with
@@ -123,10 +138,54 @@ func (v *SafeVec) EuclideanDistance(other Distancer) (float64, bool) {
 	for i, vi := range v.vec {
 		wi, ok := other.Peek(uint(i))
 		if !ok {
-			panic("ehh")
+			panic("ehh") // TODO: fix.
 		}
 		r += (vi - wi) * (vi - wi)
 	}
 
 	return math.Sqrt(r), true
+}
+
+// Norm is the norm of the internal vector.
+func (v *SafeVec) Norm() float64 {
+	// NOTE: this func performs precomputation and is technically a
+	// write, but it is ok since the underlying vec doesn't change.
+	if v.normSet {
+		return v.norm
+	}
+
+	r := 0.
+	for i := range v.vec {
+		r += v.vec[i] * v.vec[i]
+	}
+	r = math.Sqrt(r)
+	v.norm = r
+	v.normSet = true
+	return r
+}
+
+// CosineSimilarity finds the cosine similarity between this vector and the
+// other. Returns false on two conditions, if;
+//	(A): neq dimensions.
+//	(B): one of the vectors is a zero vector.
+func (v *SafeVec) CosineSimilarity(other Distancer) (float64, bool) {
+	if other == nil || uint(len(v.vec)) != other.Dim() {
+		return 0, false
+	}
+
+	vNorm, otherNorm := v.Norm(), other.Norm()
+	if vNorm == 0 || otherNorm == 0 {
+		return 0, false
+	}
+
+	dot := 0.
+	for i := 0; i < len(v.vec); i++ {
+		otherElm, ok := other.Peek(uint(i))
+		// Vecs are not of equal length afterall.
+		if !ok {
+			return 0, false
+		}
+		dot += v.vec[i] * otherElm
+	}
+	return dot / vNorm / otherNorm, true
 }
