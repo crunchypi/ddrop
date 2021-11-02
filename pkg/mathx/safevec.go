@@ -28,16 +28,14 @@ type Distancer interface {
 
 	// Peek attempts to return an element of an underlying vector at
 	// the given index. False return signals out-of-bounds.
-	Peek(index uint) (float64, bool)
+	Peek(index int) (float64, bool)
 	// Dim is intended to return the dimension of an underlying vector.
-	Dim() uint
+	Dim() int
 	// Norm is the norm of the internal vector.
 	Norm() float64
-
-	// NOTE: add id?
 }
 
-// SafeVec is a read-only wrapper around an []float64; the intent is
+// SafeVec is a read-only wrapper around a []float64; the intent is
 // for it to be safe to pass around in a highly concurrent context.
 // Note 1; it implements the 'Distancer' interface in this pkg.
 // Note 2; no locking as it is read-only.
@@ -60,18 +58,22 @@ func NewSafeVec(elements ...float64) *SafeVec {
 
 // NewSafeVecRand is a constructor for SafeVec, which is initialized
 // with a specified dimention and elements in rand range [0,1].
-func NewSafeVecRand(dim uint) *SafeVec {
+// Returns nil and false if dim < 0.
+func NewSafeVecRand(dim int) (*SafeVec, bool) {
+	if dim < 0 {
+		return nil, false
+	}
 	vec := make([]float64, dim)
-	for i := 0; i < int(dim); i++ {
+	for i := 0; i < dim; i++ {
 		vec[i] = rand.Float64()
 	}
 
-	return &SafeVec{vec: vec}
+	return &SafeVec{vec: vec}, true
 }
 
 // Dim exposes the dimension of the underlying vector.
-func (v *SafeVec) Dim() uint {
-	return uint(len(v.vec))
+func (v *SafeVec) Dim() int {
+	return len(v.vec)
 }
 
 // Clone returns a clone of the type.
@@ -82,9 +84,9 @@ func (v *SafeVec) Clone() *SafeVec {
 // Iter allows a safe read-only iteration of the underlying vector.
 // Accepts a func which receives the index and value (i.e a range loop)
 // of each element -- this func can return false to stop the itaration.
-func (v *SafeVec) Iter(f func(uint, float64) bool) {
+func (v *SafeVec) Iter(f func(int, float64) bool) {
 	for i, elm := range v.vec {
-		if !f(uint(i), elm) {
+		if !f(i, elm) {
 			return
 		}
 	}
@@ -92,12 +94,12 @@ func (v *SafeVec) Iter(f func(uint, float64) bool) {
 
 // Eq does an equality check with the other SafeVec.
 func (v *SafeVec) Eq(other *SafeVec) bool {
-	if uint(len(v.vec)) != other.Dim() {
+	if len(v.vec) != other.Dim() {
 		return false
 	}
 
 	eq := true
-	other.Iter(func(i uint, elm float64) bool {
+	other.Iter(func(i int, elm float64) bool {
 		eq = v.vec[i] == elm
 		return eq
 	})
@@ -117,8 +119,8 @@ func (v *SafeVec) In(others []*SafeVec) bool {
 
 // Peek returns the element of the underlying []float64 at a given index.
 // Will return false if the index is out-of-bounds.
-func (v *SafeVec) Peek(index uint) (float64, bool) {
-	l := uint(len(v.vec))
+func (v *SafeVec) Peek(index int) (float64, bool) {
+	l := len(v.vec)
 	if index >= l || index < 0 {
 		return 0, false
 	}
@@ -130,15 +132,16 @@ func (v *SafeVec) Peek(index uint) (float64, bool) {
 // False condition if:
 //	neq dimension for the two vecs.
 func (v *SafeVec) EuclideanDistance(other Distancer) (float64, bool) {
-	if other == nil || uint(len(v.vec)) != other.Dim() {
+	if other == nil || len(v.vec) != other.Dim() {
 		return 0, false
 	}
 
 	r := 0.
 	for i, vi := range v.vec {
-		wi, ok := other.Peek(uint(i))
+		wi, ok := other.Peek(i)
+		// Vecs are not of equal length afterall.
 		if !ok {
-			panic("ehh") // TODO: fix.
+			return 0, false
 		}
 		r += (vi - wi) * (vi - wi)
 	}
@@ -154,14 +157,13 @@ func (v *SafeVec) Norm() float64 {
 		return v.norm
 	}
 
-	r := 0.
 	for i := range v.vec {
-		r += v.vec[i] * v.vec[i]
+		v.norm += v.vec[i] * v.vec[i]
 	}
-	r = math.Sqrt(r)
-	v.norm = r
+
+	v.norm = math.Sqrt(v.norm)
 	v.normSet = true
-	return r
+	return v.norm
 }
 
 // CosineSimilarity finds the cosine similarity between this vector and the
@@ -169,7 +171,7 @@ func (v *SafeVec) Norm() float64 {
 //	(A): neq dimensions.
 //	(B): one of the vectors is a zero vector.
 func (v *SafeVec) CosineSimilarity(other Distancer) (float64, bool) {
-	if other == nil || uint(len(v.vec)) != other.Dim() {
+	if other == nil || len(v.vec) != other.Dim() {
 		return 0, false
 	}
 
@@ -180,7 +182,7 @@ func (v *SafeVec) CosineSimilarity(other Distancer) (float64, bool) {
 
 	dot := 0.
 	for i := 0; i < len(v.vec); i++ {
-		otherElm, ok := other.Peek(uint(i))
+		otherElm, ok := other.Peek(i)
 		// Vecs are not of equal length afterall.
 		if !ok {
 			return 0, false
