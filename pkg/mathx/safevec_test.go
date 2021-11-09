@@ -4,19 +4,68 @@ import (
 	"testing"
 )
 
-func TestPeek(t *testing.T) {
-	v := NewSafeVec(1, 2)
-	elm, ok := v.Peek(0)
-	if !ok || elm != 1 {
-		t.Fatalf("peek no. 1: want 1, got %v (ok=%v)", elm, ok)
+func TestSafeVecIter(t *testing.T) {
+	v := []float64{1, 2}
+	w := NewSafeVec(v...)
+
+	w.Iter(func(index int, element float64) bool {
+		if v[index] != element {
+			t.Fatalf("unexpected safevec elm on index %v: %v", index, element)
+		}
+		return true
+	})
+}
+
+func TestSafeVecEq(t *testing.T) {
+	v := []float64{1, 2, 3, 0, 4}
+
+	w1 := NewSafeVec(v...)
+	w2 := NewSafeVec(v...)
+
+	if !w1.Eq(w2) {
+		t.Fatal("false negative")
 	}
-	elm, ok = v.Peek(1)
-	if !ok || elm != 2 {
-		t.Fatalf("peek no. 2: want 1, got %v (ok=%v)", elm, ok)
+
+	w3 := NewSafeVec(append(v, 1.)...)
+	if w1.Eq(w3) {
+		t.Fatal("false positive")
 	}
-	_, ok = v.Peek(2)
+
+}
+
+func TestSafeVecIn(t *testing.T) {
+	vecs := []*SafeVec{
+		NewSafeVec(1, 2, 3),
+		NewSafeVec(2, 3, 4),
+		NewSafeVec(3, 4, 5),
+	}
+
+	if !vecs[0].In(vecs) {
+		t.Fatal("false negative")
+	}
+
+	if NewSafeVec(0, 0, 0).In(vecs) {
+		t.Fatal("false positive")
+	}
+}
+
+func TestSafeVecPeek(t *testing.T) {
+	v := []float64{1, 2, 3, 0, 4}
+	w := NewSafeVec(v...)
+
+	for i, elm1 := range v {
+		elm2, ok := w.Peek(i)
+		if !ok {
+			t.Fatal("unexpected out of bounds on index", i)
+		}
+		if elm1 != elm2 {
+			t.Fatal("unexpected neq element on index", 1)
+		}
+	}
+
+	elm, ok := w.Peek(len(v))
 	if ok {
-		t.Fatalf("peek no. 4: did not get out-of bounds")
+		t.Fatalf("did not get out-of bounds on index %v. elm=%v", len(v), elm)
 	}
 }
 
