@@ -9,7 +9,7 @@ import "math"
 // EuclideanDistance finds the Euclidean distance between two vectors.
 // Returns false if:
 //	len(v1) != len(v2)
-func Euclidean(v1, v2 []float64) (float64, bool) {
+func EuclideanDistance(v1, v2 []float64) (float64, bool) {
 	if len(v1) != len(v2) {
 		return 0, false
 	}

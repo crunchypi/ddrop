@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestEucDist(t *testing.T) {
+func TestEuclideanDistance(t *testing.T) {
 	type tcase struct {
 		vec1   []float64
 		vec2   []float64
@@ -17,7 +17,7 @@ func TestEucDist(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		res, _ := Euclidean(c.vec1, c.vec2)
+		res, _ := EuclideanDistance(c.vec1, c.vec2)
 		res = RoundF64(res, 4) // 4 decimal places.
 
 		if res != c.answer {
