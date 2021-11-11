@@ -2,6 +2,8 @@ package knn
 
 import (
 	"testing"
+
+	"github.com/crunchypi/ddrop/pkg/mathx"
 )
 
 func TestResultItemsBubbleInsert(t *testing.T) {
@@ -91,6 +93,73 @@ func TestResultItemsBubbleInsert(t *testing.T) {
 				s := "failed on test case no. %v."
 				s += " resultItems[%v].score is %v, want %v\n"
 				t.Fatalf(s, i, j, gotScore, expectedScore)
+			}
+		}
+	}
+}
+
+func newVecPoolGenerator(vecs [][]float64) VecPoolGenerator {
+	i := 0
+	return func() ([]float64, bool) {
+		if i >= len(vecs) {
+			return nil, false
+		}
+		i++
+		return vecs[i-1], true
+	}
+}
+
+func TestKNNBrute(t *testing.T) {
+	type testCases struct {
+		args         KNNBruteArgs
+		expectResult []int
+	}
+
+	tCases := []testCases{
+		// 0) k-nearest-neighbours with Euclidean distance.
+		{
+			args: KNNBruteArgs{
+				SearchVec: []float64{0, 1, 2},
+				VecPoolGenerator: newVecPoolGenerator([][]float64{
+					{1, 5, 4}, // dist to SearchVec: ~4.582.
+					{0, 3, 5}, // dist to SearchVec: ~3.605.
+				}),
+				DistanceFunc: mathx.EuclideanDistance,
+				K:            1,
+				Ascending:    true,
+			},
+			expectResult: []int{1},
+		},
+		// 1) k-nearest-neighbours with cosine similarity.
+		{
+			args: KNNBruteArgs{
+				SearchVec: []float64{0, 1, 2},
+				VecPoolGenerator: newVecPoolGenerator([][]float64{
+					{1, 5, 4}, // dist to SearchVec: ~0.897
+					{0, 3, 5}, // dist to SearchVec: ~0.997.
+				}),
+				DistanceFunc: mathx.CosineSimilarity,
+				K:            1,
+				Ascending:    true,
+			},
+			expectResult: []int{0},
+		},
+	}
+
+	for i, tCase := range tCases {
+		result, ok := KNNBrute(tCase.args)
+		if !ok {
+			t.Fatalf("failed on test case no. %v: KNNBrute returned false", i)
+		}
+
+		for j, expectedElement := range tCase.expectResult {
+			resultElement := result[j]
+
+			if expectedElement != resultElement {
+				s := "failed on test case no. %v."
+				s += " result[%v] is %v, want %v\n"
+				t.Fatalf(s, i, j, resultElement, expectedElement)
+
 			}
 		}
 	}
