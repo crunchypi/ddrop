@@ -130,6 +130,20 @@ func TestKNNBrute(t *testing.T) {
 			},
 			expectResult: []int{1},
 		},
+		// 0) k-furthest-neighbours with Euclidean distance.
+		{
+			args: KNNBruteArgs{
+				SearchVec: []float64{0, 1, 2},
+				VecPoolGenerator: newVecPoolGenerator([][]float64{
+					{1, 5, 4}, // dist to SearchVec: ~4.582.
+					{0, 3, 5}, // dist to SearchVec: ~3.605.
+				}),
+				DistanceFunc: mathx.EuclideanDistance,
+				K:            1,
+				Ascending:    false,
+			},
+			expectResult: []int{0},
+		},
 		// 1) k-nearest-neighbours with cosine similarity.
 		{
 			args: KNNBruteArgs{
@@ -143,6 +157,20 @@ func TestKNNBrute(t *testing.T) {
 				Ascending:    true,
 			},
 			expectResult: []int{0},
+		},
+		// 1) k-furthest-neighbours with cosine similarity.
+		{
+			args: KNNBruteArgs{
+				SearchVec: []float64{0, 1, 2},
+				VecPoolGenerator: newVecPoolGenerator([][]float64{
+					{1, 5, 4}, // dist to SearchVec: ~0.897
+					{0, 3, 5}, // dist to SearchVec: ~0.997.
+				}),
+				DistanceFunc: mathx.CosineSimilarity,
+				K:            1,
+				Ascending:    false,
+			},
+			expectResult: []int{1},
 		},
 	}
 
