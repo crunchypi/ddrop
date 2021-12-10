@@ -192,3 +192,87 @@ func TestKNNBrute(t *testing.T) {
 		}
 	}
 }
+
+// Prefab, so re-using test case in TestKNNBrute.
+func TestKNNEuc(t *testing.T) {
+	searchVec := []float64{0, 1, 2}
+	vecPool := newVecPoolGenerator([][]float64{
+		{1, 5, 4}, // dist to SearchVec: ~4.582.
+		{0, 3, 5}, // dist to SearchVec: ~3.605.
+	})
+	r, ok := KNNEuc(searchVec, vecPool, 1)
+	if !ok {
+		t.Fatal("arg check fail")
+	}
+
+	if len(r) != 1 {
+		t.Fatal("unexpected result len:", len(r))
+	}
+
+	if r[0] != 1 {
+		t.Fatal("unexpected result index:", r[0])
+	}
+}
+
+// Prefab, so re-using test case in TestKNNBrute.
+func TestKFNEuc(t *testing.T) {
+	searchVec := []float64{0, 1, 2}
+	vecPool := newVecPoolGenerator([][]float64{
+		{1, 5, 4}, // dist to SearchVec: ~4.582.
+		{0, 3, 5}, // dist to SearchVec: ~3.605.
+	})
+	r, ok := KFNEuc(searchVec, vecPool, 1)
+	if !ok {
+		t.Fatal("arg check fail")
+	}
+
+	if len(r) != 1 {
+		t.Fatal("unexpected result len:", len(r))
+	}
+
+	if r[0] != 0 {
+		t.Fatal("unexpected result index:", r[0])
+	}
+}
+
+// Prefab, so re-using test case in TestKNNBrute.
+func TestKNNCos(t *testing.T) {
+	searchVec := []float64{0, 1, 2}
+	vecPool := newVecPoolGenerator([][]float64{
+		{1, 5, 4}, // dist to SearchVec: ~0.897
+		{0, 3, 5}, // dist to SearchVec: ~0.997.
+	})
+	r, ok := KNNCos(searchVec, vecPool, 1)
+	if !ok {
+		t.Fatal("arg check fail")
+	}
+
+	if len(r) != 1 {
+		t.Fatal("unexpected result len:", len(r))
+	}
+
+	if r[0] != 0 {
+		t.Fatal("unexpected result index:", r[0])
+	}
+}
+
+// Prefab, so re-using test case in TestKNNBrute.
+func TestKFNCos(t *testing.T) {
+	searchVec := []float64{0, 1, 2}
+	vecPool := newVecPoolGenerator([][]float64{
+		{1, 5, 4}, // dist to SearchVec: ~0.897
+		{0, 3, 5}, // dist to SearchVec: ~0.997.
+	})
+	r, ok := KFNCos(searchVec, vecPool, 1)
+	if !ok {
+		t.Fatal("arg check fail")
+	}
+
+	if len(r) != 1 {
+		t.Fatal("unexpected result len:", len(r))
+	}
+
+	if r[0] != 1 {
+		t.Fatal("unexpected result index:", r[0])
+	}
+}

@@ -4,7 +4,11 @@ It is based on the use of generators, which makes it especially flexible.
 */
 package knn
 
-import "math"
+import (
+	"math"
+
+	"github.com/crunchypi/ddrop/pkg/mathx"
+)
 
 // VecPoolGenerator is used for clarity. It represents a generator function
 // which is supposed iterate over- and return vectors ([]float) one by one.
@@ -51,6 +55,9 @@ func (items resultItems) bubbleInsert(insertee resultItem, ascending bool) {
 func (items resultItems) toIndexes() []int {
 	r := make([]int, 0, len(items))
 	for i := 0; i < len(items); i++ {
+		if !items[i].set {
+			continue
+		}
 		r = append(r, items[i].index)
 	}
 
@@ -142,4 +149,52 @@ func KNNBrute(args KNNBruteArgs) ([]int, bool) {
 		i++
 	}
 	return r.toIndexes(), true
+}
+
+// KNNEuc finds k nearest neighbours using Euclidean distance.
+// It is a convenience wrapper around KNNBrute (this pkg).
+func KNNEuc(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
+	return KNNBrute(KNNBruteArgs{
+		SearchVec:        searchVec,
+		VecPoolGenerator: pool,
+		DistanceFunc:     mathx.EuclideanDistance,
+		K:                k,
+		Ascending:        true,
+	})
+}
+
+// KNNEuc finds k furthest neighbours using Euclidean distance.
+// It is a convenience wrapper around KNNBrute (this pkg).
+func KFNEuc(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
+	return KNNBrute(KNNBruteArgs{
+		SearchVec:        searchVec,
+		VecPoolGenerator: pool,
+		DistanceFunc:     mathx.EuclideanDistance,
+		K:                k,
+		Ascending:        false,
+	})
+}
+
+// KNNEuc finds k nearest neighbours using cosine similarity.
+// It is a convenience wrapper around KNNBrute (this pkg).
+func KNNCos(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
+	return KNNBrute(KNNBruteArgs{
+		SearchVec:        searchVec,
+		VecPoolGenerator: pool,
+		DistanceFunc:     mathx.CosineSimilarity,
+		K:                k,
+		Ascending:        true,
+	})
+}
+
+// KNNEuc finds k furthest neighbours using cosine similarity.
+// It is a convenience wrapper around KNNBrute (this pkg).
+func KFNCos(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
+	return KNNBrute(KNNBruteArgs{
+		SearchVec:        searchVec,
+		VecPoolGenerator: pool,
+		DistanceFunc:     mathx.CosineSimilarity,
+		K:                k,
+		Ascending:        false,
+	})
 }
