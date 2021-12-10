@@ -183,7 +183,7 @@ func KNNCos(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
 		VecPoolGenerator: pool,
 		DistanceFunc:     mathx.CosineSimilarity,
 		K:                k,
-		Ascending:        true,
+		Ascending:        false,
 	})
 }
 
@@ -195,6 +195,6 @@ func KFNCos(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
 		VecPoolGenerator: pool,
 		DistanceFunc:     mathx.CosineSimilarity,
 		K:                k,
-		Ascending:        false,
+		Ascending:        true,
 	})
 }

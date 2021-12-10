@@ -251,7 +251,7 @@ func TestKNNCos(t *testing.T) {
 		t.Fatal("unexpected result len:", len(r))
 	}
 
-	if r[0] != 0 {
+	if r[0] != 1 {
 		t.Fatal("unexpected result index:", r[0])
 	}
 }
@@ -272,7 +272,7 @@ func TestKFNCos(t *testing.T) {
 		t.Fatal("unexpected result len:", len(r))
 	}
 
-	if r[0] != 1 {
+	if r[0] != 0 {
 		t.Fatal("unexpected result index:", r[0])
 	}
 }
