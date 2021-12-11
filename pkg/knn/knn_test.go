@@ -109,13 +109,13 @@ func newVecPoolGenerator(vecs [][]float64) VecPoolGenerator {
 	}
 }
 
-func TestKNNEuc(t *testing.T) {
+func TestKNNEucFloats(t *testing.T) {
 	searchVec := []float64{0, 1, 2}
 	vecPool := newVecPoolGenerator([][]float64{
 		{1, 5, 4}, // dist to SearchVec: ~4.582.
 		{0, 3, 5}, // dist to SearchVec: ~3.605.
 	})
-	r, ok := KNNEuc(searchVec, vecPool, 1)
+	r, ok := KNNEucFloats(searchVec, vecPool, 1)
 	if !ok {
 		t.Fatal("arg check fail")
 	}
@@ -129,13 +129,13 @@ func TestKNNEuc(t *testing.T) {
 	}
 }
 
-func TestKFNEuc(t *testing.T) {
+func TestKFNEucFloats(t *testing.T) {
 	searchVec := []float64{0, 1, 2}
 	vecPool := newVecPoolGenerator([][]float64{
 		{1, 5, 4}, // dist to SearchVec: ~4.582.
 		{0, 3, 5}, // dist to SearchVec: ~3.605.
 	})
-	r, ok := KFNEuc(searchVec, vecPool, 1)
+	r, ok := KFNEucFloats(searchVec, vecPool, 1)
 	if !ok {
 		t.Fatal("arg check fail")
 	}
@@ -149,13 +149,13 @@ func TestKFNEuc(t *testing.T) {
 	}
 }
 
-func TestKNNCos(t *testing.T) {
+func TestKNNCosFloats(t *testing.T) {
 	searchVec := []float64{0, 1, 2}
 	vecPool := newVecPoolGenerator([][]float64{
 		{1, 5, 4}, // dist to SearchVec: ~0.897
 		{0, 3, 5}, // dist to SearchVec: ~0.997.
 	})
-	r, ok := KNNCos(searchVec, vecPool, 1)
+	r, ok := KNNCosFloats(searchVec, vecPool, 1)
 	if !ok {
 		t.Fatal("arg check fail")
 	}
@@ -169,13 +169,13 @@ func TestKNNCos(t *testing.T) {
 	}
 }
 
-func TestKFNCos(t *testing.T) {
+func TestKFNCosFloats(t *testing.T) {
 	searchVec := []float64{0, 1, 2}
 	vecPool := newVecPoolGenerator([][]float64{
 		{1, 5, 4}, // dist to SearchVec: ~0.897
 		{0, 3, 5}, // dist to SearchVec: ~0.997.
 	})
-	r, ok := KFNCos(searchVec, vecPool, 1)
+	r, ok := KFNCosFloats(searchVec, vecPool, 1)
 	if !ok {
 		t.Fatal("arg check fail")
 	}
@@ -186,15 +186,26 @@ func TestKFNCos(t *testing.T) {
 
 	if r[0] != 0 {
 		t.Fatal("unexpected result index:", r[0])
+	}
+}
+
+func newDistancerPoolGenerator(distancers []mathx.Distancer) DistancerPoolGenerator {
+	i := 0
+	return func() (mathx.Distancer, bool) {
+		if i >= len(distancers) {
+			return nil, false
+		}
+		i++
+		return distancers[i-1], true
 	}
 }
 
 func TestKNNEucDist(t *testing.T) {
 	query := mathx.NewSafeVec(0, 1, 2)
-	pool := []mathx.Distancer{
+	pool := newDistancerPoolGenerator([]mathx.Distancer{
 		mathx.NewSafeVec(1, 5, 4), // dist to SearchVec: ~4.582.
 		mathx.NewSafeVec(0, 3, 5), // dist to SearchVec: ~3.605.
-	}
+	})
 	r, ok := KNNEucDist(query, pool, 1)
 	if !ok {
 		t.Fatal("arg check fail")
@@ -211,10 +222,10 @@ func TestKNNEucDist(t *testing.T) {
 
 func TestKFNEucDist(t *testing.T) {
 	query := mathx.NewSafeVec(0, 1, 2)
-	pool := []mathx.Distancer{
+	pool := newDistancerPoolGenerator([]mathx.Distancer{
 		mathx.NewSafeVec(1, 5, 4), // dist to SearchVec: ~4.582.
 		mathx.NewSafeVec(0, 3, 5), // dist to SearchVec: ~3.605.
-	}
+	})
 	r, ok := KFNEucDist(query, pool, 1)
 	if !ok {
 		t.Fatal("arg check fail")
@@ -231,10 +242,10 @@ func TestKFNEucDist(t *testing.T) {
 
 func TestKNNCosDist(t *testing.T) {
 	query := mathx.NewSafeVec(0, 1, 2)
-	pool := []mathx.Distancer{
+	pool := newDistancerPoolGenerator([]mathx.Distancer{
 		mathx.NewSafeVec(1, 5, 4), // dist to SearchVec: ~0.897
 		mathx.NewSafeVec(0, 3, 5), // dist to SearchVec: ~0.997.
-	}
+	})
 	r, ok := KNNCosDist(query, pool, 1)
 	if !ok {
 		t.Fatal("arg check fail")
@@ -251,10 +262,10 @@ func TestKNNCosDist(t *testing.T) {
 
 func TestKFNCosDist(t *testing.T) {
 	query := mathx.NewSafeVec(0, 1, 2)
-	pool := []mathx.Distancer{
+	pool := newDistancerPoolGenerator([]mathx.Distancer{
 		mathx.NewSafeVec(1, 5, 4), // dist to SearchVec: ~0.897
 		mathx.NewSafeVec(0, 3, 5), // dist to SearchVec: ~0.997.
-	}
+	})
 	r, ok := KFNCosDist(query, pool, 1)
 	if !ok {
 		t.Fatal("arg check fail")
