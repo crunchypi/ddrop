@@ -163,7 +163,7 @@ func KNNEuc(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
 	})
 }
 
-// KNNEuc finds k furthest neighbours using Euclidean distance.
+// KFNEuc finds k furthest neighbours using Euclidean distance.
 // It is a convenience wrapper around KNNBrute (this pkg).
 func KFNEuc(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
 	return KNNBrute(KNNBruteArgs{
@@ -175,7 +175,7 @@ func KFNEuc(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
 	})
 }
 
-// KNNEuc finds k nearest neighbours using cosine similarity.
+// KNNCos finds k nearest neighbours using cosine similarity.
 // It is a convenience wrapper around KNNBrute (this pkg).
 func KNNCos(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
 	return KNNBrute(KNNBruteArgs{
@@ -187,7 +187,7 @@ func KNNCos(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
 	})
 }
 
-// KNNEuc finds k furthest neighbours using cosine similarity.
+// KFNCos finds k furthest neighbours using cosine similarity.
 // It is a convenience wrapper around KNNBrute (this pkg).
 func KFNCos(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
 	return KNNBrute(KNNBruteArgs{
