@@ -14,56 +14,6 @@ import (
 // which is supposed iterate over- and return vectors ([]float) one by one.
 type VecPoolGenerator func() ([]float64, bool)
 
-// Internal type for tracking searched elements that are 'best'.
-type resultItem struct {
-	// Index from VecPoolGenerator, acts as a pointer.
-	index int
-	// Derived from some distance function.
-	score float64
-	// Used to check if it's uninitialized.
-	set bool
-}
-
-// Convenience with attached methods.
-type resultItems []resultItem
-
-// bubbleInsert ether bubbles up- or bubbles down the insertee into the slice,
-// based on the 'ascending' arg and the 'score' within _all_ 'resultItems',
-// including the ones in the slice this method is attached to. It assumes that
-// all elements in the slice are already sorted in the way that is specified by
-// the ascending arg, otherwise it won't work as expected, so be sure to insert
-// any resultItem into the slice with this method.
-func (items resultItems) bubbleInsert(insertee resultItem, ascending bool) {
-	for i := 0; i < len(items); i++ {
-		// Either the caller tried to insert an item that is not set,
-		// or 'i' > 0 and a swap happened which replaced an unset item.
-		// In any case, insertee does not belong anywhere anymore.
-		if !insertee.set {
-			return
-		}
-
-		condA := !items[i].set
-		condB := insertee.score < items[i].score && ascending
-		condC := insertee.score > items[i].score && !ascending
-		if condA || condB || condC {
-			insertee, items[i] = items[i], insertee
-		}
-	}
-}
-
-// toIndexes converts extracts the index field from each element in resultItem.
-func (items resultItems) toIndexes() []int {
-	r := make([]int, 0, len(items))
-	for i := 0; i < len(items); i++ {
-		if !items[i].set {
-			continue
-		}
-		r = append(r, items[i].index)
-	}
-
-	return r
-}
-
 // KNNBruteArgs are used as args for the KNNBrute func in this pkg. Run the 'ok'
 // method of this type to checks that it's valid (no nils and k > 0).
 type KNNBruteArgs struct {
@@ -93,20 +43,12 @@ type KNNBruteArgs struct {
 
 // Ok checks that there are no nils and k > 0.
 func (args *KNNBruteArgs) Ok() bool {
-	checks := []bool{
+	return boolsOk([]bool{
 		args.SearchVec != nil,
 		args.VecPoolGenerator != nil,
 		args.DistanceFunc != nil,
 		args.K > 0,
-	}
-
-	for _, check := range checks {
-		if !check {
-			return false
-		}
-	}
-
-	return true
+	})
 }
 
 // KNNBrute is a general-purpose k-nearest-neighbours function. For details
@@ -152,54 +94,6 @@ func KNNBrute(args KNNBruteArgs) ([]int, bool) {
 	return r.toIndexes(), true
 }
 
-// KNNEuc finds k nearest neighbours using Euclidean distance.
-// It is a convenience wrapper around KNNBrute (this pkg).
-func KNNEuc(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
-	return KNNBrute(KNNBruteArgs{
-		SearchVec:        searchVec,
-		VecPoolGenerator: pool,
-		DistanceFunc:     mathx.EuclideanDistance,
-		K:                k,
-		Ascending:        true,
-	})
-}
-
-// KFNEuc finds k furthest neighbours using Euclidean distance.
-// It is a convenience wrapper around KNNBrute (this pkg).
-func KFNEuc(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
-	return KNNBrute(KNNBruteArgs{
-		SearchVec:        searchVec,
-		VecPoolGenerator: pool,
-		DistanceFunc:     mathx.EuclideanDistance,
-		K:                k,
-		Ascending:        false,
-	})
-}
-
-// KNNCos finds k nearest neighbours using cosine similarity.
-// It is a convenience wrapper around KNNBrute (this pkg).
-func KNNCos(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
-	return KNNBrute(KNNBruteArgs{
-		SearchVec:        searchVec,
-		VecPoolGenerator: pool,
-		DistanceFunc:     mathx.CosineSimilarity,
-		K:                k,
-		Ascending:        false,
-	})
-}
-
-// KFNCos finds k furthest neighbours using cosine similarity.
-// It is a convenience wrapper around KNNBrute (this pkg).
-func KFNCos(searchVec []float64, pool VecPoolGenerator, k int) ([]int, bool) {
-	return KNNBrute(KNNBruteArgs{
-		SearchVec:        searchVec,
-		VecPoolGenerator: pool,
-		DistanceFunc:     mathx.CosineSimilarity,
-		K:                k,
-		Ascending:        true,
-	})
-}
-
 // KNNBruteDistArgs are used as args for the KNNBruteDist func in this pkg.
 // Run the 'Ok' method method of this type to check that it's valid.
 type KNNBruteDistArgs struct {
@@ -223,26 +117,18 @@ type KNNBruteDistArgs struct {
 
 // Ok checks that there are no nils and k > 0.
 func (args *KNNBruteDistArgs) Ok() bool {
-	checks := []bool{
+	return boolsOk([]bool{
 		args.Query != nil,
 		args.Pool != nil,
 		args.Mapper != nil,
 		args.K > 0,
-	}
-
-	for _, check := range checks {
-		if !check {
-			return false
-		}
-	}
-
-	return true
+	})
 }
 
 // KNNBruteDist is similar to KNNBrute func (this pkg) but operates on mathx.Distancer
 // instances instead and does so eagerly -- see docs for KNNBruteDistArgs for details
 // about arguments. Returns false if the args.Ok() check fails. The []int return will
-// represent index pointrs to the 'nearest' items in args.Pool. Do note that
+// represent index pointrs to the 'nearest' items in args.Pool.
 func KNNBruteDist(args KNNBruteDistArgs) ([]int, bool) {
 	if !args.Ok() {
 		return nil, false
@@ -272,72 +158,4 @@ func KNNBruteDist(args KNNBruteDistArgs) ([]int, bool) {
 	}
 
 	return r.toIndexes(), true
-}
-
-// KNNEucDist finds k nearest neighbours using Euclidean distance.
-// It is a convenience wrapper around KNNBruteDist (this pkg).
-func KNNEucDist(query mathx.Distancer, pool []mathx.Distancer, k int) ([]int, bool) {
-	return KNNBruteDist(KNNBruteDistArgs{
-		Query: query,
-		Pool:  pool,
-		Mapper: func(d1, d2 mathx.Distancer) (float64, bool) {
-			if d1 == nil || d2 == nil {
-				return 0, false
-			}
-			return d1.EuclideanDistance(d2)
-		},
-		K:         k,
-		Ascending: true,
-	})
-}
-
-// KFNEucDist finds k furthest neighbours using Euclidean distance.
-// It is a convenience wrapper around KNNBruteDist (this pkg).
-func KFNEucDist(query mathx.Distancer, pool []mathx.Distancer, k int) ([]int, bool) {
-	return KNNBruteDist(KNNBruteDistArgs{
-		Query: query,
-		Pool:  pool,
-		Mapper: func(d1, d2 mathx.Distancer) (float64, bool) {
-			if d1 == nil || d2 == nil {
-				return 0, false
-			}
-			return d1.EuclideanDistance(d2)
-		},
-		K:         k,
-		Ascending: false,
-	})
-}
-
-// KNNCosDist finds k nearest neighbours using cosine similarity.
-// It is a convenience wrapper around KNNBruteDist (this pkg).
-func KNNCosDist(query mathx.Distancer, pool []mathx.Distancer, k int) ([]int, bool) {
-	return KNNBruteDist(KNNBruteDistArgs{
-		Query: query,
-		Pool:  pool,
-		Mapper: func(d1, d2 mathx.Distancer) (float64, bool) {
-			if d1 == nil || d2 == nil {
-				return 0, false
-			}
-			return d1.CosineSimilarity(d2)
-		},
-		K:         k,
-		Ascending: false,
-	})
-}
-
-// KFNCosDist finds k furthest neighbours using cosine similarity.
-// It is a convenience wrapper around KNNBruteDist (this pkg).
-func KFNCosDist(query mathx.Distancer, pool []mathx.Distancer, k int) ([]int, bool) {
-	return KNNBruteDist(KNNBruteDistArgs{
-		Query: query,
-		Pool:  pool,
-		Mapper: func(d1, d2 mathx.Distancer) (float64, bool) {
-			if d1 == nil || d2 == nil {
-				return 0, false
-			}
-			return d1.CosineSimilarity(d2)
-		},
-		K:         k,
-		Ascending: true,
-	})
 }
