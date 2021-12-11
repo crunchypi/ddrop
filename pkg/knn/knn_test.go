@@ -109,91 +109,6 @@ func newVecPoolGenerator(vecs [][]float64) VecPoolGenerator {
 	}
 }
 
-func TestKNNBrute(t *testing.T) {
-	type testCases struct {
-		args         KNNBruteArgs
-		expectResult []int
-	}
-
-	tCases := []testCases{
-		// 0) k-nearest-neighbours with Euclidean distance.
-		{
-			args: KNNBruteArgs{
-				SearchVec: []float64{0, 1, 2},
-				VecPoolGenerator: newVecPoolGenerator([][]float64{
-					{1, 5, 4}, // dist to SearchVec: ~4.582.
-					{0, 3, 5}, // dist to SearchVec: ~3.605.
-				}),
-				DistanceFunc: mathx.EuclideanDistance,
-				K:            1,
-				Ascending:    true,
-			},
-			expectResult: []int{1},
-		},
-		// 0) k-furthest-neighbours with Euclidean distance.
-		{
-			args: KNNBruteArgs{
-				SearchVec: []float64{0, 1, 2},
-				VecPoolGenerator: newVecPoolGenerator([][]float64{
-					{1, 5, 4}, // dist to SearchVec: ~4.582.
-					{0, 3, 5}, // dist to SearchVec: ~3.605.
-				}),
-				DistanceFunc: mathx.EuclideanDistance,
-				K:            1,
-				Ascending:    false,
-			},
-			expectResult: []int{0},
-		},
-		// 1) k-nearest-neighbours with cosine similarity.
-		{
-			args: KNNBruteArgs{
-				SearchVec: []float64{0, 1, 2},
-				VecPoolGenerator: newVecPoolGenerator([][]float64{
-					{1, 5, 4}, // dist to SearchVec: ~0.897
-					{0, 3, 5}, // dist to SearchVec: ~0.997.
-				}),
-				DistanceFunc: mathx.CosineSimilarity,
-				K:            1,
-				Ascending:    true,
-			},
-			expectResult: []int{0},
-		},
-		// 1) k-furthest-neighbours with cosine similarity.
-		{
-			args: KNNBruteArgs{
-				SearchVec: []float64{0, 1, 2},
-				VecPoolGenerator: newVecPoolGenerator([][]float64{
-					{1, 5, 4}, // dist to SearchVec: ~0.897
-					{0, 3, 5}, // dist to SearchVec: ~0.997.
-				}),
-				DistanceFunc: mathx.CosineSimilarity,
-				K:            1,
-				Ascending:    false,
-			},
-			expectResult: []int{1},
-		},
-	}
-
-	for i, tCase := range tCases {
-		result, ok := KNNBrute(tCase.args)
-		if !ok {
-			t.Fatalf("failed on test case no. %v: KNNBrute returned false", i)
-		}
-
-		for j, expectedElement := range tCase.expectResult {
-			resultElement := result[j]
-
-			if expectedElement != resultElement {
-				s := "failed on test case no. %v."
-				s += " result[%v] is %v, want %v\n"
-				t.Fatalf(s, i, j, resultElement, expectedElement)
-
-			}
-		}
-	}
-}
-
-// Prefab, so re-using test case in TestKNNBrute.
 func TestKNNEuc(t *testing.T) {
 	searchVec := []float64{0, 1, 2}
 	vecPool := newVecPoolGenerator([][]float64{
@@ -214,7 +129,6 @@ func TestKNNEuc(t *testing.T) {
 	}
 }
 
-// Prefab, so re-using test case in TestKNNBrute.
 func TestKFNEuc(t *testing.T) {
 	searchVec := []float64{0, 1, 2}
 	vecPool := newVecPoolGenerator([][]float64{
@@ -235,7 +149,6 @@ func TestKFNEuc(t *testing.T) {
 	}
 }
 
-// Prefab, so re-using test case in TestKNNBrute.
 func TestKNNCos(t *testing.T) {
 	searchVec := []float64{0, 1, 2}
 	vecPool := newVecPoolGenerator([][]float64{
@@ -256,7 +169,6 @@ func TestKNNCos(t *testing.T) {
 	}
 }
 
-// Prefab, so re-using test case in TestKNNBrute.
 func TestKFNCos(t *testing.T) {
 	searchVec := []float64{0, 1, 2}
 	vecPool := newVecPoolGenerator([][]float64{
@@ -264,6 +176,86 @@ func TestKFNCos(t *testing.T) {
 		{0, 3, 5}, // dist to SearchVec: ~0.997.
 	})
 	r, ok := KFNCos(searchVec, vecPool, 1)
+	if !ok {
+		t.Fatal("arg check fail")
+	}
+
+	if len(r) != 1 {
+		t.Fatal("unexpected result len:", len(r))
+	}
+
+	if r[0] != 0 {
+		t.Fatal("unexpected result index:", r[0])
+	}
+}
+
+func TestKNNEucDist(t *testing.T) {
+	query := mathx.NewSafeVec(0, 1, 2)
+	pool := []mathx.Distancer{
+		mathx.NewSafeVec(1, 5, 4), // dist to SearchVec: ~4.582.
+		mathx.NewSafeVec(0, 3, 5), // dist to SearchVec: ~3.605.
+	}
+	r, ok := KNNEucDist(query, pool, 1)
+	if !ok {
+		t.Fatal("arg check fail")
+	}
+
+	if len(r) != 1 {
+		t.Fatal("unexpected result len:", len(r))
+	}
+
+	if r[0] != 1 {
+		t.Fatal("unexpected result index:", r[0])
+	}
+}
+
+func TestKFNEucDist(t *testing.T) {
+	query := mathx.NewSafeVec(0, 1, 2)
+	pool := []mathx.Distancer{
+		mathx.NewSafeVec(1, 5, 4), // dist to SearchVec: ~4.582.
+		mathx.NewSafeVec(0, 3, 5), // dist to SearchVec: ~3.605.
+	}
+	r, ok := KFNEucDist(query, pool, 1)
+	if !ok {
+		t.Fatal("arg check fail")
+	}
+
+	if len(r) != 1 {
+		t.Fatal("unexpected result len:", len(r))
+	}
+
+	if r[0] != 0 {
+		t.Fatal("unexpected result index:", r[0])
+	}
+}
+
+func TestKNNCosDist(t *testing.T) {
+	query := mathx.NewSafeVec(0, 1, 2)
+	pool := []mathx.Distancer{
+		mathx.NewSafeVec(1, 5, 4), // dist to SearchVec: ~0.897
+		mathx.NewSafeVec(0, 3, 5), // dist to SearchVec: ~0.997.
+	}
+	r, ok := KNNCosDist(query, pool, 1)
+	if !ok {
+		t.Fatal("arg check fail")
+	}
+
+	if len(r) != 1 {
+		t.Fatal("unexpected result len:", len(r))
+	}
+
+	if r[0] != 1 {
+		t.Fatal("unexpected result index:", r[0])
+	}
+}
+
+func TestKFNCosDist(t *testing.T) {
+	query := mathx.NewSafeVec(0, 1, 2)
+	pool := []mathx.Distancer{
+		mathx.NewSafeVec(1, 5, 4), // dist to SearchVec: ~0.897
+		mathx.NewSafeVec(0, 3, 5), // dist to SearchVec: ~0.997.
+	}
+	r, ok := KFNCosDist(query, pool, 1)
 	if !ok {
 		t.Fatal("arg check fail")
 	}
