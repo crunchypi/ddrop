@@ -3,6 +3,9 @@ package knnc
 import (
 	"reflect"
 	"sync"
+	"time"
+
+	"github.com/crunchypi/ddrop/pkg/mathx"
 )
 
 /*
@@ -111,4 +114,101 @@ func (ss *SearchSpace) Clear() {
 	ss.Lock()
 	defer ss.Unlock()
 	ss.items = make([]DistancerContainer, 0, cap(ss.items))
+}
+
+// ScanItem is a single/atomic item output from a SearchSpace.Scan.
+type ScanItem struct {
+	ID        string
+	Distancer mathx.Distancer
+}
+
+// ScanChan is the return of SearchSpace.Scan. It is a chan of ScanItem.
+type ScanChan <-chan ScanItem
+
+// BaseWorkerArgs contains arguments for a single worker (concurrency).
+type BaseWorkerArgs struct {
+	// Buf specifies the output chan buffer for this worker. Must be >= 0.
+	Buf int
+	// Cancel is a way of explicitly cancelling this worker and making it exit.
+	// Also see 'BlockDeadline' (this struct), it is a time-based failsafe.
+	// Must be initialized correctly (see CancelSignal doc).
+	Cancel CancelSignal
+	// BlockDeadline is time-based failsafe for this worker, intended for leak
+	// prevention. Also see 'Cancel' (this struct) for explicit cancellation.
+	// Must be > 0.
+	BlockDeadline time.Duration
+}
+
+// Ok validates BaseWorkerArgs. Returns true iff:
+// 	(1) args.Buf >0 0
+//	(2) args.CancelSignal was initialized correctly (with NewCancelSignal()).
+//	(3) args.BlockDeadline > 0.
+func (args *BaseWorkerArgs) Ok() bool {
+	return boolsOk([]bool{
+		args.Buf >= 0,
+		args.Cancel.c != nil,
+		args.BlockDeadline > 0,
+	})
+}
+
+// ScanArgs is intended for SearchSpace.Scan().
+type ScanArgs struct {
+	// Extend refers to the search extent. 1=scan whole searchspace, 0.5=half.
+	// Must be >= 0.0 and <= 1.0.
+	Extent float64
+	BaseWorkerArgs
+}
+
+// Ok validates ScanArgs. Returns true iff:
+//	(1) args.Extend >= 0.0 and <= 1.0.
+//	(2) Embedded BaseWorkerArgs.Ok() is true.
+func (args *ScanArgs) Ok() bool {
+	return boolsOk([]bool{
+		// Not strinctly needed but is an indicator of logic flaw.
+		args.Extent >= 0.0 && args.Extent <= 1.0,
+		args.BaseWorkerArgs.Ok(),
+	})
+}
+
+// Scan starts a scanner worker which scans the SearchSpace (i.e not blocking).
+// Returns is (ScanChan, true) if args.Ok() == true, else return is (nil, false).
+// See ScanArgs and BaseWorkerArgs (embedded in ScanArgs) for argument details.
+// Note, scanner uses 'read mutex', so will not block multiple concurrent scans.
+func (ss *SearchSpace) Scan(args ScanArgs) (ScanChan, bool) {
+	if !args.Ok() {
+		return nil, false
+	}
+
+	out := make(chan ScanItem, args.Buf)
+	go func() {
+		defer close(out)
+		ss.RLock()
+		defer ss.RUnlock()
+
+		// Adjusted loop iteration to accommodate the specified search extent.
+		l := len(ss.items)
+		checkN := float64(l) * args.Extent
+		iterStep := l / int(checkN)
+		remainder := l % int(checkN)
+
+		i := 0
+		for i < l {
+			if distancer := ss.items[i].Distancer(); distancer != nil {
+				select {
+				case out <- ScanItem{ID: ss.items[i].ID(), Distancer: distancer}:
+				case <-args.Cancel.c:
+					return
+				case <-time.After(args.BlockDeadline):
+					return
+				}
+			}
+
+			i += iterStep
+			if remainder > 0 {
+				remainder--
+				i++
+			}
+		}
+	}()
+	return out, true
 }

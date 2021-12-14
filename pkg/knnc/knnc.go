@@ -26,3 +26,13 @@ type DistancerContainer interface {
 	// by the Distancer() func of this interface.
 	ID() string
 }
+
+// boolsOk returns true if all bools in the slice are true.
+func boolsOk(bs []bool) bool {
+	for _, b := range bs {
+		if !b {
+			return false
+		}
+	}
+	return true
+}
