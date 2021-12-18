@@ -125,32 +125,6 @@ type ScanItem struct {
 // ScanChan is the return of SearchSpace.Scan. It is a chan of ScanItem.
 type ScanChan <-chan ScanItem
 
-// BaseWorkerArgs contains arguments for a single worker (concurrency).
-type BaseWorkerArgs struct {
-	// Buf specifies the output chan buffer for this worker. Must be >= 0.
-	Buf int
-	// Cancel is a way of explicitly cancelling this worker and making it exit.
-	// Also see 'BlockDeadline' (this struct), it is a time-based failsafe.
-	// Must be initialized correctly (see CancelSignal doc).
-	Cancel CancelSignal
-	// BlockDeadline is time-based failsafe for this worker, intended for leak
-	// prevention. Also see 'Cancel' (this struct) for explicit cancellation.
-	// Must be > 0.
-	BlockDeadline time.Duration
-}
-
-// Ok validates BaseWorkerArgs. Returns true iff:
-// 	(1) args.Buf >0 0
-//	(2) args.CancelSignal was initialized correctly (with NewCancelSignal()).
-//	(3) args.BlockDeadline > 0.
-func (args *BaseWorkerArgs) Ok() bool {
-	return boolsOk([]bool{
-		args.Buf >= 0,
-		args.Cancel.c != nil,
-		args.BlockDeadline > 0,
-	})
-}
-
 // ScanArgs is intended for SearchSpace.Scan().
 type ScanArgs struct {
 	// Extend refers to the search extent. 1=scan whole searchspace, 0.5=half.

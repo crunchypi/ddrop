@@ -36,3 +36,9 @@ func boolsOk(bs []bool) bool {
 	}
 	return true
 }
+
+type ScoreItem struct {
+	ID    string
+	Score float64
+	set   bool
+}
