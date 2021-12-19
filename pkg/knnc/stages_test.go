@@ -61,3 +61,53 @@ func TestMapStage(t *testing.T) {
 		}
 	}
 }
+
+func TestFilterStage(t *testing.T) {
+	// Input data.
+	scores := []ScoreItem{
+		{Score: 5, set: true},
+		{Score: 3, set: true},
+		{Score: 1, set: true},
+		{Score: 9, set: true},
+	}
+
+	dontFilter := scores[len(scores)-1] // What not to filter out.
+
+	// Simulate previous (intended as mapping) stage
+	chFaucet := make(chan ScoreItem)
+	go func() {
+		defer close(chFaucet)
+		for _, v := range scores {
+			chFaucet <- v
+		}
+	}()
+
+	// Run stage.
+	chOut, ok := FilterStage(FilterStageArgs{
+		In: chFaucet,
+		// Note that everything besides 'dontFilter' is filtered.
+		FilterFunc: func(scoreItem ScoreItem) bool {
+			return scoreItem.Score == dontFilter.Score
+		},
+		BaseStageArgs: BaseStageArgs{
+			NWorkers: 100,
+			BaseWorkerArgs: BaseWorkerArgs{
+				Buf:           100,
+				Cancel:        NewCancelSignal(),
+				BlockDeadline: time.Second * 5,
+			},
+		},
+	})
+
+	if !ok {
+		t.Fatal("args validation check failed; test impl error")
+	}
+
+	// Validate.
+	for scoreItem := range chOut {
+		if scoreItem.Score != dontFilter.Score {
+			t.Fatalf("unexpected item with score %v", scoreItem.Score)
+		}
+	}
+
+}

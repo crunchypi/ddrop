@@ -117,3 +117,65 @@ func MapStage(args MapStageArgs) (<-chan ScoreItem, bool) {
 
 	return out, true
 }
+
+// FilterStageArgs is intended for the FilterStage func.
+type FilterStageArgs struct {
+	// In is a readable ScoreItem chan. Workers will read from this.
+	In <-chan ScoreItem
+	// FilterFunc is what each worker will use to evaluate whether or not
+	// to filter a ScoreItem out (i.e drop). Return false = drop.
+	FilterFunc func(ScoreItem) bool
+	BaseStageArgs
+}
+
+// Ok valiadtes FilterStageArgs. Returns true iff:
+//	(1) args.In != nil
+//	(2)	args.FilterFunc != nil,
+//	(3) args.BaseStageArgs returns true on its Ok().
+func (args *FilterStageArgs) Ok() bool {
+	return boolsOk([]bool{
+		args.In != nil,
+		args.FilterFunc != nil,
+		args.BaseStageArgs.Ok(),
+	})
+}
+
+// FilterStage is a stage (concurrency context) where some input can be filtered
+// out, based on some criteria. To be specific, data will be read from args.In,
+// then fed into args.FilterFunc, where a false return will cause data to be
+// dropped -- everything else is pushed into the chan returned here. See
+// documentation for FilterStageArgs and the nested structs to get more details
+// about the different parameters (such as FilterStageArgs.BaseStageArgs.NWorkers).
+// Note; return here will be (nil, false) if args.Ok() == false.
+func FilterStage(args FilterStageArgs) (<-chan ScoreItem, bool) {
+	if !args.Ok() {
+		return nil, false
+	}
+
+	out := make(chan ScoreItem, args.Buf)
+	wg := sync.WaitGroup{}
+	wg.Add(args.NWorkers)
+
+	for i := 0; i < args.NWorkers; i++ {
+		go func() {
+			defer wg.Done()
+			for scoreItem := range args.In {
+				if !args.FilterFunc(scoreItem) {
+					continue
+				}
+
+				select {
+				case out <- scoreItem:
+				case <-args.Cancel.c:
+					return
+				case <-time.After(args.BlockDeadline):
+					return
+				}
+			}
+		}()
+	}
+
+	go func() { wg.Wait(); close(out) }()
+
+	return out, true
+}
