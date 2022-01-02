@@ -11,6 +11,10 @@ func TestSearchSpaceAddSearchable(t *testing.T) {
 		t.Fatal("didn't get a new searchspace")
 	}
 
+	if ss.AddSearchable(&data{}) {
+		t.Fatal("added a DistancerContainer with nil internal Distancer ")
+	}
+
 	if !ss.AddSearchable(&data{newTVecRand(3)}) {
 		t.Fatal("could not add to fresh search space")
 	}

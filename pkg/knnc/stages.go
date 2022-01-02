@@ -12,7 +12,7 @@ type BaseWorkerArgs struct {
 	// Cancel is a way of explicitly cancelling this worker and making it exit.
 	// Also see 'BlockDeadline' (this struct), it is a time-based failsafe.
 	// Must be initialized correctly (see CancelSignal doc).
-	Cancel CancelSignal
+	Cancel *CancelSignal
 	// BlockDeadline is time-based failsafe for this worker, intended for leak
 	// prevention. Also see 'Cancel' (this struct) for explicit cancellation.
 	// Must be > 0.

@@ -66,6 +66,10 @@ func (ss *SearchSpace) AddSearchable(dc DistancerContainer) bool {
 	}
 
 	d := dc.Distancer() // Validation.
+	// == nil does not work as expected.
+	if reflect.ValueOf(d).IsNil() {
+		return false
+	}
 
 	// All vecs in this ss must have an equal dimension. This is naturally not
 	// enforced if ss.items is empty.

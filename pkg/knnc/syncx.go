@@ -1,5 +1,7 @@
 package knnc
 
+import "sync"
+
 /*
 File for things that could have been an extension of std/sync.
 */
@@ -10,17 +12,33 @@ File for things that could have been an extension of std/sync.
 // is with the NewCancelSignal func, this is enforced throughout this pkg.
 type CancelSignal struct {
 	c chan struct{}
+
+	closed     bool
+	closeMutex *sync.RWMutex
 }
 
 // NewCancelSignal is a factory func for CancelSignal -- the only valid way
 // of setting it up is by using this.
-func NewCancelSignal() CancelSignal {
-	return CancelSignal{make(chan struct{})}
+func NewCancelSignal() *CancelSignal {
+	return &CancelSignal{c: make(chan struct{}), closed: false, closeMutex: &sync.RWMutex{}}
 }
 
-// Cancel is the only api of CancelSignal, used to send a cancel signal.
+// Cancel sends a cancel signal to all keepers of this instance.
 func (cs *CancelSignal) Cancel() {
-	// TODO: Race condition if concurrent, is that something that is relevant?
-	// Check double close?
+	cs.closeMutex.Lock()
+	defer cs.closeMutex.Unlock()
+	if cs.closed {
+		return
+	}
+
+	cs.closed = true
 	close(cs.c)
+}
+
+// Cancelled return true only if the Cancel method has been called.
+func (cs *CancelSignal) Cancelled() bool {
+	cs.closeMutex.RLock()
+	defer cs.closeMutex.RUnlock()
+
+	return cs.closed
 }
