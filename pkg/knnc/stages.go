@@ -179,3 +179,101 @@ func FilterStage(args FilterStageArgs) (<-chan ScoreItem, bool) {
 
 	return out, true
 }
+
+// MergeStageArgs is intended for the MergeStage func.
+type MergeStageArgs struct {
+	// In is a readable ScoreItem chan. Workers will read from this.
+	In <-chan ScoreItem
+	// K as the K in KNN.
+	K int
+	// Ascending specifies whether the resulting scores (from the 'In' chan)
+	// should be ordered in ascending (or descending) order.
+	Ascending bool
+	// SendInterval specifies how often the MergeStage should stream out results.
+	// This is included because the function is particularly costly, as it streams
+	// using <chan ScoreItems> (plural). Each worker will receive ScoreItem instances
+	// through the 'In' chan, then merge them into _each_their_own ScoreItems. These
+	// slices will be sent into the output stream with the interval specified here.
+	// 1 = on each recv and merge.
+	// 2 = every second recv and merge.
+	// 3 = etc.
+	SendInterval int
+	BaseStageArgs
+}
+
+// Ok validates MergeStageArgs. Returns true iff:
+//	(1) args.In != nil
+//	(2) args.K > 0
+//	(3) args.SendInterval > 0
+//	(4) args.BaseStageArgs.Ok() == true
+func (args *MergeStageArgs) Ok() bool {
+	return boolsOk([]bool{
+		args.In != nil,
+		args.K > 0,
+		args.SendInterval > 0,
+		args.BaseStageArgs.Ok(),
+	})
+}
+
+// MergeStage is a stage (concurrency context) where input (args.In) is merged
+// in an ordered fashion into ScoreItems (plural) instances, which are pushed
+// out through the returned chan periodically. Specifically, it spawns workers
+// (args.NWorkers), all merging the input into their _individual_ ScoreItems
+// using the ScoreItems.BubbleInsert method (ascending arg = args.Ascending).
+// Copies of these ordered ScoreItems are then pushed into the returned chan at
+// the interval specified in args.SendInterval. As such, this is a particularly
+// costly function and should be treated as such. For more information, see
+// documentation for MergeStageArgs and the nested structs. Also note that
+// the only condition for a false return is if args.Ok() == false.
+func MergeStage(args MergeStageArgs) (<-chan ScoreItems, bool) {
+	if !args.Ok() {
+		return nil, false
+	}
+
+	out := make(chan ScoreItems, args.NWorkers)
+	// Reduces code duplication. False means abort.
+	trySend := func(scoreItems ScoreItems) bool {
+		// Safety in copy since it's uncertain how the slice will be used downstream.
+		cp := make(ScoreItems, len(scoreItems))
+		copy(cp, scoreItems)
+
+		select {
+		case out <- cp:
+			return true
+		case <-args.Cancel.c:
+			return false
+		case <-time.After(args.BlockDeadline):
+			return false
+		}
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(args.NWorkers)
+
+	// Each goroutine will receive through the chan and merge into _each_their_own_
+	// slice of ScoreItems, which will be streamed to the 'out' chan periodically.
+	for i := 0; i < args.NWorkers; i++ {
+		go func() {
+			defer wg.Done()
+
+			scoreItems := make(ScoreItems, args.K)
+			i := 0
+			for scoreItem := range args.In {
+				scoreItems.BubbleInsert(scoreItem, args.Ascending)
+
+				if i%args.SendInterval == 0 {
+					if !trySend(scoreItems.Trim()) {
+						return
+					}
+				}
+				i++
+			}
+
+			trySend(scoreItems.Trim())
+		}()
+	}
+
+	go func() { wg.Wait(); close(out) }()
+
+	return out, true
+}

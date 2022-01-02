@@ -111,3 +111,88 @@ func TestFilterStage(t *testing.T) {
 	}
 
 }
+
+func TestMergeStage(t *testing.T) {
+	// Input data.
+	n := 1000
+	buf := 100
+	scores := make([]ScoreItem, n)
+	for i := 0; i < n; i++ {
+		scores[i] = ScoreItem{Score: float64(i), set: true}
+	}
+
+	// Shuffle.
+	for i := 0; i < n; i++ {
+		j := rand.Intn(n)
+		scores[i], scores[j] = scores[j], scores[i]
+	}
+
+	merge := func(k int, ascending bool) ([]ScoreItem, bool) {
+		// Simulate previous (intended as mapping) stage, using the input data.
+		chFaucet := make(chan ScoreItem, buf)
+		go func() {
+			defer close(chFaucet)
+			for _, v := range scores {
+				chFaucet <- v
+			}
+		}()
+
+		ch, ok := MergeStage(MergeStageArgs{
+			In:           chFaucet,
+			K:            k,
+			Ascending:    ascending,
+			SendInterval: 1,
+			BaseStageArgs: BaseStageArgs{
+				NWorkers: buf,
+				BaseWorkerArgs: BaseWorkerArgs{
+					Buf:           0,
+					Cancel:        NewCancelSignal(),
+					BlockDeadline: time.Second * 3,
+				},
+			},
+		})
+
+		if !ok {
+			return nil, false
+		}
+
+		r := make(ScoreItems, k)
+		for scoreItems := range ch {
+			for _, scoreItem := range scoreItems {
+				r.BubbleInsert(scoreItem, ascending)
+			}
+		}
+		return r, true
+	}
+
+	// Test Ascending.
+	k := 2
+	scoreItems, ok := merge(k, true)
+
+	if !ok {
+		t.Fatal("args validation check failed; test impl error")
+	}
+
+	if len(scoreItems) != k {
+		t.Fatal("unexpected len of resulting scoreitems slice")
+	}
+
+	if scoreItems[0].Score != 0 && scoreItems[1].Score != 1 {
+		t.Fatal("unexpected result in scoreitems slice:", scoreItems)
+	}
+
+	// Test Descending.
+	scoreItems, ok = merge(k, false)
+
+	if !ok {
+		t.Fatal("args validation check failed; test impl error")
+	}
+
+	if len(scoreItems) != k {
+		t.Fatal("unexpected len of resulting scoreitems slice")
+	}
+
+	if scoreItems[0].Score != float64(n-1) && scoreItems[1].Score != float64(n-2) {
+		t.Fatal("unexpected result in scoreitems slice:", scoreItems)
+	}
+}

@@ -42,3 +42,43 @@ type ScoreItem struct {
 	Score float64
 	set   bool
 }
+
+// ScoreItems is <[]ScoreItem>, used for method attachment.
+type ScoreItems []ScoreItem
+
+// BubbleInsert either bubbles up- or bubbles down the insertee into the slice,
+// based on the 'ascending' arg and the 'score' within _all_ 'ScoreItems',
+// including the ones in the slice this method is attached to. It assumes that
+// all elements in the slice are already sorted in the way that is specified by
+// the ascending arg, otherwise it won't work as expected, so be sure to insert
+// any ScoreItem into the slice with this method.
+func (items ScoreItems) BubbleInsert(insertee ScoreItem, ascending bool) {
+	for i := 0; i < len(items); i++ {
+		// Either the caller tried to insert an item that is not set,
+		// or 'i' > 0 and a swap happened which replaced an unset item.
+		// In any case, insertee does not belong anywhere anymore.
+		if !insertee.set {
+			return
+		}
+
+		condA := !items[i].set
+		condB := insertee.Score < items[i].Score && ascending
+		condC := insertee.Score > items[i].Score && !ascending
+		if condA || condB || condC {
+			insertee, items[i] = items[i], insertee
+		}
+	}
+}
+
+// Trim removes zero-value elements from the slice.
+func (items ScoreItems) Trim() ScoreItems {
+	r := make(ScoreItems, 0, len(items))
+	for _, item := range items {
+		if !item.set {
+			continue
+		}
+		r = append(r, item)
+	}
+
+	return r
+}
