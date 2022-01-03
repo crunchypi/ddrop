@@ -5,6 +5,26 @@ import (
 	"time"
 )
 
+/*
+File contains prefab stages (concurrency context) relevant to this pkg. They
+are not a necessity, but defined nontheless due to their usefulness, relative
+complexity and because they are easy to get wrong (everything is tested).
+Specifically, they are:
+- MapStage		(maps ScanItem instances into ScoreItem instances)
+- FilterStage	(filters ScoreItem instances)
+- MergeStage	(merges ScoreItem instances)
+
+All stage functions listed above have each their argument types (because that
+makes func signatures shorter and separates out argument validation), which are
+composed in multiple layers for flexibility purposes.
+*/
+
+/*
+--------------------------------------------------------------------------------
+BaseWorkerArgs and BaseStageArgs, along with argument validation methods.
+--------------------------------------------------------------------------------
+*/
+
 // BaseWorkerArgs contains arguments for a single worker (concurrency).
 type BaseWorkerArgs struct {
 	// Buf specifies the output chan buffer for this worker. Must be >= 0.
@@ -49,25 +69,45 @@ func (args *BaseStageArgs) Ok() bool {
 	})
 }
 
-// MapStageArgs is intended for the MapStage func.
-type MapStageArgs struct {
-	// In is a readable ScanItem chan. Workers will read from this.
-	In <-chan ScanItem
+/*
+--------------------------------------------------------------------------------
+MapStage func and argument types (along with validation methods).
+--------------------------------------------------------------------------------
+*/
+
+// MapStagePartialArgs is intended as partial args for MapStageArgs.
+// Extracted as a separate struct for additional flexibility.
+type MapStagePartialArgs struct {
 	// Each worker will read from the 'In' field of this struct (<-chan ScanItem),
 	// then use this func to transform the ScanItem. Note; false will drop ScanItem.
 	MapFunc func(Distancer) (ScoreItem, bool)
 	BaseStageArgs
 }
 
+// Ok validates MapStagePartialArgs. Returns true iff:
+//	(1) args.MapFunc != nil
+//	(2) args.BaseStageArgs (embedded) returns true on its Ok().
+func (args *MapStagePartialArgs) Ok() bool {
+	return boolsOk([]bool{
+		args.MapFunc != nil,
+		args.BaseStageArgs.Ok(),
+	})
+}
+
+// MapStageArgs is intended for the MapStage func.
+type MapStageArgs struct {
+	// In is a readable ScanItem chan. Workers will read from this.
+	In <-chan ScanItem
+	MapStagePartialArgs
+}
+
 // Ok validates MapStageArgs. Returns true iff:
 // 	(1) args.In != nil
-//	(2) args.MapFunc != nil,
-//	(3) args.BaseStageArgs returns true on its Ok().
+//	(2) args.MapStagePartial (embedded) returns true on its Ok().
 func (args *MapStageArgs) Ok() bool {
 	return boolsOk([]bool{
 		args.In != nil,
-		args.MapFunc != nil,
-		args.BaseStageArgs.Ok(),
+		args.MapStagePartialArgs.Ok(),
 	})
 }
 
@@ -118,25 +158,45 @@ func MapStage(args MapStageArgs) (<-chan ScoreItem, bool) {
 	return out, true
 }
 
-// FilterStageArgs is intended for the FilterStage func.
-type FilterStageArgs struct {
-	// In is a readable ScoreItem chan. Workers will read from this.
-	In <-chan ScoreItem
+/*
+--------------------------------------------------------------------------------
+FilterStage func and argument types (along with validation methods).
+--------------------------------------------------------------------------------
+*/
+
+// FilterStagePartialArgs is intended as partial args for FilterStageArgs.
+// Extracted as a separate struct for additional flexibility.
+type FilterStagePartialArgs struct {
 	// FilterFunc is what each worker will use to evaluate whether or not
 	// to filter a ScoreItem out (i.e drop). Return false = drop.
 	FilterFunc func(ScoreItem) bool
 	BaseStageArgs
 }
 
+// Ok validates FilterStagePartialArgs. Returns true iff:
+//	(1) args.FilterFunc != nil,
+//	(2) args.BaseStageArgs (embedded) returns true on its Ok().
+func (args *FilterStagePartialArgs) Ok() bool {
+	return boolsOk([]bool{
+		args.FilterFunc != nil,
+		args.BaseStageArgs.Ok(),
+	})
+}
+
+// FilterStageArgs is intended for the FilterStage func.
+type FilterStageArgs struct {
+	// In is a readable ScoreItem chan. Workers will read from this.
+	In <-chan ScoreItem
+	FilterStagePartialArgs
+}
+
 // Ok valiadtes FilterStageArgs. Returns true iff:
 //	(1) args.In != nil
-//	(2)	args.FilterFunc != nil,
-//	(3) args.BaseStageArgs returns true on its Ok().
+//	(2) args.FilterStagePartialArgs (embedded) return true on its Ok().
 func (args *FilterStageArgs) Ok() bool {
 	return boolsOk([]bool{
 		args.In != nil,
-		args.FilterFunc != nil,
-		args.BaseStageArgs.Ok(),
+		args.FilterStagePartialArgs.Ok(),
 	})
 }
 
@@ -180,10 +240,15 @@ func FilterStage(args FilterStageArgs) (<-chan ScoreItem, bool) {
 	return out, true
 }
 
-// MergeStageArgs is intended for the MergeStage func.
-type MergeStageArgs struct {
-	// In is a readable ScoreItem chan. Workers will read from this.
-	In <-chan ScoreItem
+/*
+--------------------------------------------------------------------------------
+MergeStage func and argument types (along with validation methods).
+--------------------------------------------------------------------------------
+*/
+
+// MergeStagePartialArgs is intended as partial args for MergeStageArgs.
+// Extracted as a separate struct for additional flexibility.
+type MergeStagePartialArgs struct {
 	// K as the K in KNN.
 	K int
 	// Ascending specifies whether the resulting scores (from the 'In' chan)
@@ -192,26 +257,44 @@ type MergeStageArgs struct {
 	// SendInterval specifies how often the MergeStage should stream out results.
 	// This is included because the function is particularly costly, as it streams
 	// using <chan ScoreItems> (plural). Each worker will receive ScoreItem instances
-	// through the 'In' chan, then merge them into _each_their_own ScoreItems. These
-	// slices will be sent into the output stream with the interval specified here.
-	// 1 = on each recv and merge.
-	// 2 = every second recv and merge.
-	// 3 = etc.
+	// through the 'In' chan, then merge them into _each_their_own ScoreItems.
+	// These ScoreItems instances will then be sent into the output stream with
+	// the interval specified here:
+	//	1 = send on each recv and merge.
+	//	2 = send every second recv and merge.
+	//	3 = etc.
+	// Note that when a ScoreItems instance is sent, a new one will be created in
+	// its place in a worker, so duplicate data will not be sent.
 	SendInterval int
 	BaseStageArgs
 }
 
-// Ok validates MergeStageArgs. Returns true iff:
-//	(1) args.In != nil
-//	(2) args.K > 0
-//	(3) args.SendInterval > 0
-//	(4) args.BaseStageArgs.Ok() == true
-func (args *MergeStageArgs) Ok() bool {
+// Ok validates MergeStagePartialArgs. Returns true iff:
+//	(1) args.K > 0
+//	(2) args.SendInterval > 0
+//	(3) args.BaseStageArgs (embedded) returns true on its Ok().
+func (args *MergeStagePartialArgs) Ok() bool {
 	return boolsOk([]bool{
-		args.In != nil,
 		args.K > 0,
 		args.SendInterval > 0,
 		args.BaseStageArgs.Ok(),
+	})
+}
+
+// MergeStageArgs is intended for the MergeStage func.
+type MergeStageArgs struct {
+	// In is a readable ScoreItem chan. Workers will read from this.
+	In <-chan ScoreItem
+	MergeStagePartialArgs
+}
+
+// Ok validates MergeStageArgs. Returns true iff:
+//	(1) args.In != nil
+//	(2) args.MergeStagePartialArgs (embedded) return strue on its Ok().
+func (args *MergeStageArgs) Ok() bool {
+	return boolsOk([]bool{
+		args.In != nil,
+		args.MergeStagePartialArgs.Ok(),
 	})
 }
 
@@ -233,12 +316,19 @@ func MergeStage(args MergeStageArgs) (<-chan ScoreItems, bool) {
 	out := make(chan ScoreItems, args.NWorkers)
 	// Reduces code duplication. False means abort.
 	trySend := func(scoreItems ScoreItems) bool {
-		// Safety in copy since it's uncertain how the slice will be used downstream.
-		cp := make(ScoreItems, len(scoreItems))
-		copy(cp, scoreItems)
+		// No point in sending empty. Check before costly .Trim() call.
+		if len(scoreItems) == 0 {
+			return true
+		}
+		scoreItems = scoreItems.Trim()
+
+		// Check again, might not be empty after trim.
+		if len(scoreItems) == 0 {
+			return true
+		}
 
 		select {
-		case out <- cp:
+		case out <- scoreItems:
 			return true
 		case <-args.Cancel.c:
 			return false
@@ -262,14 +352,21 @@ func MergeStage(args MergeStageArgs) (<-chan ScoreItems, bool) {
 				scoreItems.BubbleInsert(scoreItem, args.Ascending)
 
 				if i%args.SendInterval == 0 {
-					if !trySend(scoreItems.Trim()) {
+					if !trySend(scoreItems) {
 						return
 					}
+					// A new copy _must_ be created; not doing so can lead to
+					// the same ScoreItem instance to be sent multiple times.
+					// That is a problem because the caller of this func can't
+					// know whether or not the ScoreItems are duplicates or not,
+					// and can't assume either case.
+					scoreItems = make(ScoreItems, args.K)
 				}
 				i++
 			}
 
-			trySend(scoreItems.Trim())
+			// No need in creating a duplicate as above (since this is last).
+			trySend(scoreItems)
 		}()
 	}
 

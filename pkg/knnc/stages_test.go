@@ -4,47 +4,78 @@ import (
 	"math/rand"
 	"testing"
 	"time"
-
-	"github.com/crunchypi/ddrop/pkg/mathx"
 )
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func TestMapStage(t *testing.T) {
-	// input data.
-	queryVec := newTVec(0, 1, 2)
-	otherVecs := []*tVec{
-		newTVec(1, 5, 4), // Euclidean dist to qv: 4.5826
-		newTVec(0, 3, 5), // Euclidean dist to qv: 3.6056
-	}
+/*
+--------------------------------------------------------------------------------
+This test file covers stages.go and havs some common setup code in each test
+func. As such, some common code is factored out and put here at the top.
+--------------------------------------------------------------------------------
+*/
 
-	// Simulate scanner.
-	chFaucet := make(chan ScanItem)
+func commonTestingCodeBaseStageArgs() BaseStageArgs {
+	return BaseStageArgs{
+		NWorkers: 100,
+		BaseWorkerArgs: BaseWorkerArgs{
+			Buf:           50,
+			Cancel:        NewCancelSignal(),
+			BlockDeadline: time.Second * 3,
+		},
+	}
+}
+
+func commonTestingCodeRawScanItemFaucet(vecs []*tVec) <-chan ScanItem {
+	out := make(chan ScanItem)
 	go func() {
-		defer close(chFaucet)
-		for _, v := range otherVecs {
-			chFaucet <- ScanItem{Distancer: v}
+		defer close(out)
+		for _, v := range vecs {
+			out <- ScanItem{Distancer: v}
 		}
 	}()
+	return out
+}
+
+func commonTestingCodeRawScoreItemFaucet(scoreItems []ScoreItem) <-chan ScoreItem {
+	out := make(chan ScoreItem)
+	go func() {
+		defer close(out)
+		for _, scoreItem := range scoreItems {
+			out <- scoreItem
+		}
+	}()
+
+	return out
+}
+
+/*
+--------------------------------------------------------------------------------
+Tests below.
+--------------------------------------------------------------------------------
+*/
+
+func TestMapStage(t *testing.T) {
+	// input data.
+	queryVec := newTVec(0)
+	chFaucet := commonTestingCodeRawScanItemFaucet([]*tVec{
+		newTVec(1), // Euclidean dist to qv: 1
+		newTVec(2), // Euclidean dist to qv: 2
+	})
 
 	// Run stage.
 	chOut, ok := MapStage(MapStageArgs{
 		In: chFaucet,
 		// Note Euclidean distance.
-		MapFunc: func(d Distancer) (ScoreItem, bool) {
-			score, ok := d.EuclideanDistance(queryVec)
-			// Field 'set' is handled inside stage, so omitted here.
-			return ScoreItem{ID: "", Score: score}, ok
-		},
-		BaseStageArgs: BaseStageArgs{
-			NWorkers: 100,
-			BaseWorkerArgs: BaseWorkerArgs{
-				Buf:           100,
-				Cancel:        NewCancelSignal(),
-				BlockDeadline: time.Second * 10,
+		MapStagePartialArgs: MapStagePartialArgs{
+			MapFunc: func(d Distancer) (ScoreItem, bool) {
+				score, ok := d.EuclideanDistance(queryVec)
+				// Field 'set' is handled inside stage, so omitted here.
+				return ScoreItem{ID: "", Score: score}, ok
 			},
+			BaseStageArgs: commonTestingCodeBaseStageArgs(),
 		},
 	})
 
@@ -55,8 +86,7 @@ func TestMapStage(t *testing.T) {
 	// Validate.
 	for scoreItem := range chOut {
 		// Not ideal check but the order is not deterministic.
-		scoreItem.Score = mathx.RoundF64(scoreItem.Score, 4)
-		if scoreItem.Score != 4.5826 && scoreItem.Score != 3.6056 {
+		if scoreItem.Score != 1. && scoreItem.Score != 2. {
 			t.Fatalf("unexpected score: %v", scoreItem.Score)
 		}
 	}
@@ -73,29 +103,16 @@ func TestFilterStage(t *testing.T) {
 
 	dontFilter := scores[len(scores)-1] // What not to filter out.
 
-	// Simulate previous (intended as mapping) stage
-	chFaucet := make(chan ScoreItem)
-	go func() {
-		defer close(chFaucet)
-		for _, v := range scores {
-			chFaucet <- v
-		}
-	}()
-
 	// Run stage.
 	chOut, ok := FilterStage(FilterStageArgs{
-		In: chFaucet,
-		// Note that everything besides 'dontFilter' is filtered.
-		FilterFunc: func(scoreItem ScoreItem) bool {
-			return scoreItem.Score == dontFilter.Score
-		},
-		BaseStageArgs: BaseStageArgs{
-			NWorkers: 100,
-			BaseWorkerArgs: BaseWorkerArgs{
-				Buf:           100,
-				Cancel:        NewCancelSignal(),
-				BlockDeadline: time.Second * 5,
+		// Simulate previous (intended as mapping) stage
+		In: commonTestingCodeRawScoreItemFaucet(scores),
+		FilterStagePartialArgs: FilterStagePartialArgs{
+			// Note that everything besides 'dontFilter' is filtered.
+			FilterFunc: func(scoreItem ScoreItem) bool {
+				return scoreItem.Score == dontFilter.Score
 			},
+			BaseStageArgs: commonTestingCodeBaseStageArgs(),
 		},
 	})
 
@@ -109,13 +126,14 @@ func TestFilterStage(t *testing.T) {
 			t.Fatalf("unexpected item with score %v", scoreItem.Score)
 		}
 	}
-
 }
 
-func TestMergeStage(t *testing.T) {
+func TestMergeStageAscending(t *testing.T) {
+	n := 100_000
+	k := 2
+	ascending := true
+
 	// Input data.
-	n := 1000
-	buf := 100
 	scores := make([]ScoreItem, n)
 	for i := 0; i < n; i++ {
 		scores[i] = ScoreItem{Score: float64(i), set: true}
@@ -127,72 +145,85 @@ func TestMergeStage(t *testing.T) {
 		scores[i], scores[j] = scores[j], scores[i]
 	}
 
-	merge := func(k int, ascending bool) ([]ScoreItem, bool) {
+	ch, ok := MergeStage(MergeStageArgs{
 		// Simulate previous (intended as mapping) stage, using the input data.
-		chFaucet := make(chan ScoreItem, buf)
-		go func() {
-			defer close(chFaucet)
-			for _, v := range scores {
-				chFaucet <- v
-			}
-		}()
-
-		ch, ok := MergeStage(MergeStageArgs{
-			In:           chFaucet,
-			K:            k,
-			Ascending:    ascending,
-			SendInterval: 1,
-			BaseStageArgs: BaseStageArgs{
-				NWorkers: buf,
-				BaseWorkerArgs: BaseWorkerArgs{
-					Buf:           0,
-					Cancel:        NewCancelSignal(),
-					BlockDeadline: time.Second * 3,
-				},
-			},
-		})
-
-		if !ok {
-			return nil, false
-		}
-
-		r := make(ScoreItems, k)
-		for scoreItems := range ch {
-			for _, scoreItem := range scoreItems {
-				r.BubbleInsert(scoreItem, ascending)
-			}
-		}
-		return r, true
-	}
-
-	// Test Ascending.
-	k := 2
-	scoreItems, ok := merge(k, true)
+		In: commonTestingCodeRawScoreItemFaucet(scores),
+		MergeStagePartialArgs: MergeStagePartialArgs{
+			K:             k,
+			Ascending:     ascending,
+			SendInterval:  2,
+			BaseStageArgs: commonTestingCodeBaseStageArgs(),
+		},
+	})
 
 	if !ok {
 		t.Fatal("args validation check failed; test impl error")
 	}
 
-	if len(scoreItems) != k {
-		t.Fatal("unexpected len of resulting scoreitems slice")
+	scoreItems := make(ScoreItems, k)
+	for scoreItemsTemp := range ch {
+		for _, scoreItem := range scoreItemsTemp {
+			scoreItems.BubbleInsert(scoreItem, ascending)
+		}
 	}
 
-	if scoreItems[0].Score != 0 && scoreItems[1].Score != 1 {
+	if len(scoreItems) != k {
+		t.Fatal("unexpected len of resulting scoreitems slice", len(scoreItems))
+	}
+
+	a := scoreItems[0].Score
+	b := scoreItems[1].Score
+	if (a != 0 && b != 1) || a == b {
 		t.Fatal("unexpected result in scoreitems slice:", scoreItems)
 	}
+}
 
-	// Test Descending.
-	scoreItems, ok = merge(k, false)
+func TestMergeStageDescending(t *testing.T) {
+	n := 100_000
+	k := 2
+	ascending := false
+
+	// Input data.
+	scores := make([]ScoreItem, n)
+	for i := 0; i < n; i++ {
+		scores[i] = ScoreItem{Score: float64(i), set: true}
+	}
+
+	// Shuffle.
+	for i := 0; i < n; i++ {
+		j := rand.Intn(n)
+		scores[i], scores[j] = scores[j], scores[i]
+	}
+
+	ch, ok := MergeStage(MergeStageArgs{
+		// Simulate previous (intended as mapping) stage, using the input data.
+		In: commonTestingCodeRawScoreItemFaucet(scores),
+		MergeStagePartialArgs: MergeStagePartialArgs{
+			K:             k,
+			Ascending:     ascending,
+			SendInterval:  2,
+			BaseStageArgs: commonTestingCodeBaseStageArgs(),
+		},
+	})
 
 	if !ok {
 		t.Fatal("args validation check failed; test impl error")
 	}
 
-	if len(scoreItems) != k {
-		t.Fatal("unexpected len of resulting scoreitems slice")
+	scoreItems := make(ScoreItems, k)
+	for scoreItemsTemp := range ch {
+		for _, scoreItem := range scoreItemsTemp {
+			scoreItems.BubbleInsert(scoreItem, ascending)
+		}
 	}
 
-	if scoreItems[0].Score != float64(n-1) && scoreItems[1].Score != float64(n-2) {
+	if len(scoreItems) != k {
+		t.Fatal("unexpected len of resulting scoreitems slice:", len(scoreItems))
+	}
+
+	a := scoreItems[0].Score
+	b := scoreItems[1].Score
+	if (a != float64(n-1) && b != float64(n-2)) || a == b {
 		t.Fatal("unexpected result in scoreitems slice:", scoreItems)
 	}
 }

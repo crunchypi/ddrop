@@ -129,8 +129,8 @@ type ScanItem struct {
 // ScanChan is the return of SearchSpace.Scan. It is a chan of ScanItem.
 type ScanChan <-chan ScanItem
 
-// ScanArgs is intended for SearchSpace.Scan().
-type ScanArgs struct {
+// SearchSpaceScanArgs is intended for SearchSpace.Scan().
+type SearchSpaceScanArgs struct {
 	// Extend refers to the search extent. 1=scan whole searchspace, 0.5=half.
 	// Must be >= 0.0 and <= 1.0.
 	Extent float64
@@ -140,7 +140,7 @@ type ScanArgs struct {
 // Ok validates ScanArgs. Returns true iff:
 //	(1) args.Extend >= 0.0 and <= 1.0.
 //	(2) Embedded BaseWorkerArgs.Ok() is true.
-func (args *ScanArgs) Ok() bool {
+func (args *SearchSpaceScanArgs) Ok() bool {
 	return boolsOk([]bool{
 		// Not strinctly needed but is an indicator of logic flaw.
 		args.Extent >= 0.0 && args.Extent <= 1.0,
@@ -152,7 +152,7 @@ func (args *ScanArgs) Ok() bool {
 // Returns is (ScanChan, true) if args.Ok() == true, else return is (nil, false).
 // See ScanArgs and BaseWorkerArgs (embedded in ScanArgs) for argument details.
 // Note, scanner uses 'read mutex', so will not block multiple concurrent scans.
-func (ss *SearchSpace) Scan(args ScanArgs) (ScanChan, bool) {
+func (ss *SearchSpace) Scan(args SearchSpaceScanArgs) (ScanChan, bool) {
 	if !args.Ok() {
 		return nil, false
 	}
