@@ -73,7 +73,7 @@ func TestMapStage(t *testing.T) {
 			MapFunc: func(d Distancer) (ScoreItem, bool) {
 				score, ok := d.EuclideanDistance(queryVec)
 				// Field 'set' is handled inside stage, so omitted here.
-				return ScoreItem{ID: "", Score: score}, ok
+				return ScoreItem{Score: score}, ok
 			},
 			BaseStageArgs: commonTestingCodeBaseStageArgs(),
 		},
@@ -95,10 +95,10 @@ func TestMapStage(t *testing.T) {
 func TestFilterStage(t *testing.T) {
 	// Input data.
 	scores := []ScoreItem{
-		{Score: 5, set: true},
-		{Score: 3, set: true},
-		{Score: 1, set: true},
-		{Score: 9, set: true},
+		{Score: 5, Set: true},
+		{Score: 3, Set: true},
+		{Score: 1, Set: true},
+		{Score: 9, Set: true},
 	}
 
 	dontFilter := scores[len(scores)-1] // What not to filter out.
@@ -136,7 +136,7 @@ func TestMergeStageAscending(t *testing.T) {
 	// Input data.
 	scores := make([]ScoreItem, n)
 	for i := 0; i < n; i++ {
-		scores[i] = ScoreItem{Score: float64(i), set: true}
+		scores[i] = ScoreItem{Score: float64(i), Set: true}
 	}
 
 	// Shuffle.
@@ -186,7 +186,7 @@ func TestMergeStageDescending(t *testing.T) {
 	// Input data.
 	scores := make([]ScoreItem, n)
 	for i := 0; i < n; i++ {
-		scores[i] = ScoreItem{Score: float64(i), set: true}
+		scores[i] = ScoreItem{Score: float64(i), Set: true}
 	}
 
 	// Shuffle.

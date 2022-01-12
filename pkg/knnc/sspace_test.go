@@ -42,9 +42,12 @@ func TestSearchSpaceClear(t *testing.T) {
 		},
 	}
 
-	ss.Clear()
+	old := ss.Clear()
 	if ss.Len() != 0 {
-		t.Errorf("unexpected len after clear: %v", ss.Len())
+		t.Fatalf("unexpected len after clear: %v", ss.Len())
+	}
+	if len(old) != 3 {
+		t.Fatalf("unexpected old slice len: %v", len(old))
 	}
 }
 

@@ -113,16 +113,17 @@ func (ss *SearchSpace) Clean() {
 	}
 }
 
-// Clear will delete _all_ data in this search space.
-func (ss *SearchSpace) Clear() {
+// Clear will reset the inner data slice and return the old slice.
+func (ss *SearchSpace) Clear() []DistancerContainer {
 	ss.Lock()
 	defer ss.Unlock()
+	old := ss.items
 	ss.items = make([]DistancerContainer, 0, cap(ss.items))
+	return old
 }
 
 // ScanItem is a single/atomic item output from a SearchSpace.Scan.
 type ScanItem struct {
-	ID        string
 	Distancer mathx.Distancer
 }
 
@@ -137,7 +138,7 @@ type SearchSpaceScanArgs struct {
 	BaseWorkerArgs
 }
 
-// Ok validates ScanArgs. Returns true iff:
+// Ok validates SearchSpaceScanArgs. Returns true iff:
 //	(1) args.Extend >= 0.0 and <= 1.0.
 //	(2) Embedded BaseWorkerArgs.Ok() is true.
 func (args *SearchSpaceScanArgs) Ok() bool {
@@ -150,7 +151,7 @@ func (args *SearchSpaceScanArgs) Ok() bool {
 
 // Scan starts a scanner worker which scans the SearchSpace (i.e not blocking).
 // Returns is (ScanChan, true) if args.Ok() == true, else return is (nil, false).
-// See ScanArgs and BaseWorkerArgs (embedded in ScanArgs) for argument details.
+// See SearchSpaceScanArgs and BaseWorkerArgs (embedded in ScanArgs) for details.
 // Note, scanner uses 'read mutex', so will not block multiple concurrent scans.
 func (ss *SearchSpace) Scan(args SearchSpaceScanArgs) (ScanChan, bool) {
 	if !args.Ok() {
@@ -162,6 +163,9 @@ func (ss *SearchSpace) Scan(args SearchSpaceScanArgs) (ScanChan, bool) {
 		defer close(out)
 		ss.RLock()
 		defer ss.RUnlock()
+		if args.UnsafeDoneCallback != nil {
+			defer args.UnsafeDoneCallback()
+		}
 
 		// Adjusted loop iteration to accommodate the specified search extent.
 		l := len(ss.items)
@@ -171,9 +175,11 @@ func (ss *SearchSpace) Scan(args SearchSpaceScanArgs) (ScanChan, bool) {
 
 		i := 0
 		for i < l {
-			if distancer := ss.items[i].Distancer(); distancer != nil {
+			distancer := ss.items[i].Distancer()
+			// != nil does not work as expected.
+			if !reflect.ValueOf(distancer).IsNil() {
 				select {
-				case out <- ScanItem{ID: ss.items[i].ID(), Distancer: distancer}:
+				case out <- ScanItem{Distancer: distancer}:
 				case <-args.Cancel.c:
 					return
 				case <-time.After(args.BlockDeadline):

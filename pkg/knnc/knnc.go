@@ -10,21 +10,15 @@ import "github.com/crunchypi/ddrop/pkg/mathx"
 // Distancer is an alias for mathx.Distancer.
 type Distancer = mathx.Distancer
 
-// DistancerContainer is any type that can provide a mathx.Distancer, which can
-// do distance calculation (related to KNN), and some ID that can reference it.
-// The intent of this pkg is to enable KNN queries, using the mathx.Distancer,
-// and eventually giving some result containing this ID, which could be used for
-// some lookup elsewhere.
+// DistancerContainer is any type that can produce a mathx.Distancer, which can
+// do distance calculations (related to KNN). The intent, in the context of this
+// pkg, is to do KNN queries on these distancers, and give them back as results.
 type DistancerContainer interface {
 	// See docs for mathx.Distancer and/or the surrounding interface (
 	// DistancerContainer). The concrete returned type here should be
 	// thread-safe, or nil when it is no longer needed -- this will mark
 	// it as deletable.
 	Distancer() mathx.Distancer
-	// See docs for the surroinding interface (DistancerContainer). This
-	// will be part of KNN queries and should reference the Distancer given
-	// by the Distancer() func of this interface.
-	ID() string
 }
 
 // boolsOk returns true if all bools in the slice are true.
@@ -38,9 +32,11 @@ func boolsOk(bs []bool) bool {
 }
 
 type ScoreItem struct {
-	ID    string
+	Distancer Distancer
+	// Score is the 'distance' between a query vec and a neighbor candidate.
 	Score float64
-	set   bool
+	// Set is false if this instance is in a default unset state.
+	Set bool
 }
 
 // ScoreItems is <[]ScoreItem>, used for method attachment.
@@ -57,11 +53,11 @@ func (items ScoreItems) BubbleInsert(insertee ScoreItem, ascending bool) {
 		// Either the caller tried to insert an item that is not set,
 		// or 'i' > 0 and a swap happened which replaced an unset item.
 		// In any case, insertee does not belong anywhere anymore.
-		if !insertee.set {
+		if !insertee.Set {
 			return
 		}
 
-		condA := !items[i].set
+		condA := !items[i].Set
 		condB := insertee.Score < items[i].Score && ascending
 		condC := insertee.Score > items[i].Score && !ascending
 		if condA || condB || condC {
@@ -74,7 +70,7 @@ func (items ScoreItems) BubbleInsert(insertee ScoreItem, ascending bool) {
 func (items ScoreItems) Trim() ScoreItems {
 	r := make(ScoreItems, 0, len(items))
 	for _, item := range items {
-		if !item.set {
+		if !item.Set {
 			continue
 		}
 		r = append(r, item)

@@ -1,6 +1,7 @@
 package knnc
 
 import (
+	"reflect"
 	"sync"
 	"time"
 )
@@ -37,6 +38,10 @@ type BaseWorkerArgs struct {
 	// prevention. Also see 'Cancel' (this struct) for explicit cancellation.
 	// Must be > 0.
 	BlockDeadline time.Duration
+	// UnsafeDoneCallback is called when a gorougine is done. It is named as
+	// unsafe because it is done in a goroutine (i.e concurrently) and the
+	// safety depends on usage. May be nil.
+	UnsafeDoneCallback func()
 }
 
 // Ok validates BaseWorkerArgs. Returns true iff:
@@ -129,9 +134,14 @@ func MapStage(args MapStageArgs) (<-chan ScoreItem, bool) {
 	for i := 0; i < args.NWorkers; i++ {
 		go func() {
 			defer wg.Done()
+			if args.UnsafeDoneCallback != nil {
+				defer args.UnsafeDoneCallback()
+			}
+
 			for scanItem := range args.In {
 				// Distancer might have become nil while in the queue.
-				if scanItem.Distancer == nil {
+				// == nil check does not work as expected.
+				if reflect.ValueOf(scanItem.Distancer).IsNil() {
 					continue
 				}
 
@@ -139,8 +149,8 @@ func MapStage(args MapStageArgs) (<-chan ScoreItem, bool) {
 				if !ok {
 					continue
 				}
-				scoreItem.set = true
-				scoreItem.ID = scanItem.ID
+				scoreItem.Distancer = scanItem.Distancer
+				scoreItem.Set = true
 
 				select {
 				case out <- scoreItem:
@@ -219,6 +229,10 @@ func FilterStage(args FilterStageArgs) (<-chan ScoreItem, bool) {
 	for i := 0; i < args.NWorkers; i++ {
 		go func() {
 			defer wg.Done()
+			if args.UnsafeDoneCallback != nil {
+				defer args.UnsafeDoneCallback()
+			}
+
 			for scoreItem := range args.In {
 				if !args.FilterFunc(scoreItem) {
 					continue
@@ -345,6 +359,9 @@ func MergeStage(args MergeStageArgs) (<-chan ScoreItems, bool) {
 	for i := 0; i < args.NWorkers; i++ {
 		go func() {
 			defer wg.Done()
+			if args.UnsafeDoneCallback != nil {
+				defer args.UnsafeDoneCallback()
+			}
 
 			scoreItems := make(ScoreItems, args.K)
 			i := 0
