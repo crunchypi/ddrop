@@ -49,6 +49,15 @@ func (ss *SearchSpace) Cap() int {
 	return cap(ss.items)
 }
 
+// Dim returns the dimension of all internal data (if any). Note that the dim
+// can/will be overridden when SearchSpace.Len() = 0. This is handled automatically
+// when adding new data with SearchSpace.AddSearchable(...).
+func (ss *SearchSpace) Dim() int {
+	ss.RLock()
+	defer ss.RUnlock()
+	return cap(ss.items)
+}
+
 // AddSearchable is the only way of adding data to this search space (do look
 // at the clean() and clear() methods, those are the only way to delete data).
 // There are a few rules for adding data here:

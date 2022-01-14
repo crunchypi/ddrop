@@ -89,6 +89,16 @@ func (ss *SearchSpaces) Cap() int {
 	return cap(ss.searchSpaces)
 }
 
+// Dim returns the dimension of all internal data of all internal SearchSpace
+// instances. Not that the dim can/will be overridden if SearchSpaces.Len()
+// returns 0 on the first int (i.e no SearchSpace instances). This is handled
+// automatically in SearchSpaces.AddSearchable(...).
+func (ss *SearchSpaces) Dim() int {
+	ss.RLock()
+	defer ss.RUnlock()
+	return ss.uniformVecDim
+}
+
 // AddSearchable is the only way of adding data to this instance; specifically
 // to internal SearchSpace instances. There is a set of conditions wehre data
 // can't be added:
