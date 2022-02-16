@@ -1,6 +1,7 @@
 package knnc
 
 import (
+	"math"
 	"reflect"
 	"sync"
 	"time"
@@ -178,9 +179,12 @@ func (ss *SearchSpace) Scan(args SearchSpaceScanArgs) (ScanChan, bool) {
 
 		// Adjusted loop iteration to accommodate the specified search extent.
 		l := len(ss.items)
+		if l == 0 {
+			return
+		}
 		checkN := float64(l) * args.Extent
-		iterStep := l / int(checkN)
-		remainder := l % int(checkN)
+		iterStep := l / int(math.Ceil(checkN))
+		remainder := l % int(math.Ceil(checkN))
 
 		i := 0
 		for i < l {
