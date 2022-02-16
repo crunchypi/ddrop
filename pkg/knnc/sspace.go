@@ -20,7 +20,7 @@ is to be scannable in a concurrent context.
 type SearchSpace struct {
 	items  []DistancerContainer
 	vecDim int // Only uniform vectors (mathx.Distancer).
-	sync.RWMutex
+	mx     sync.RWMutex
 	// TODO: Add locker bool?
 }
 
@@ -37,15 +37,15 @@ func NewSearchSpace(maxCap int) (*SearchSpace, bool) {
 
 // Len gives the current len of the search space.
 func (ss *SearchSpace) Len() int {
-	ss.RLock()
-	defer ss.RUnlock()
+	ss.mx.RLock()
+	defer ss.mx.RUnlock()
 	return len(ss.items)
 }
 
 // Cap gives the current capacity of the search space.
 func (ss *SearchSpace) Cap() int {
-	ss.RLock()
-	defer ss.RUnlock()
+	ss.mx.RLock()
+	defer ss.mx.RUnlock()
 	return cap(ss.items)
 }
 
@@ -53,8 +53,8 @@ func (ss *SearchSpace) Cap() int {
 // can/will be overridden when SearchSpace.Len() = 0. This is handled automatically
 // when adding new data with SearchSpace.AddSearchable(...).
 func (ss *SearchSpace) Dim() int {
-	ss.RLock()
-	defer ss.RUnlock()
+	ss.mx.RLock()
+	defer ss.mx.RUnlock()
 	return cap(ss.items)
 }
 
@@ -67,8 +67,8 @@ func (ss *SearchSpace) Dim() int {
 //	-	SearchSpace.Len() will never be greater than SearchSpace.Cap(). So if
 //		SearchSpace.Len() >= SearchSpace.Cap(), then theis will abort.
 func (ss *SearchSpace) AddSearchable(dc DistancerContainer) bool {
-	ss.Lock()
-	defer ss.Unlock()
+	ss.mx.Lock()
+	defer ss.mx.Unlock()
 
 	if dc == nil {
 		return false
@@ -105,8 +105,8 @@ func (ss *SearchSpace) AddSearchable(dc DistancerContainer) bool {
 // mathx.Distancer or a nil -- the latter is interpreted as a mark for
 // deletion and will be removed when calling this Clean() method.
 func (ss *SearchSpace) Clean() {
-	ss.Lock()
-	defer ss.Unlock()
+	ss.mx.Lock()
+	defer ss.mx.Unlock()
 	i := 0
 	for i < len(ss.items) {
 		// NOTE: Checking nil with 'ss.items[i].Distancer() == nil'
@@ -124,8 +124,8 @@ func (ss *SearchSpace) Clean() {
 
 // Clear will reset the inner data slice and return the old slice.
 func (ss *SearchSpace) Clear() []DistancerContainer {
-	ss.Lock()
-	defer ss.Unlock()
+	ss.mx.Lock()
+	defer ss.mx.Unlock()
 	old := ss.items
 	ss.items = make([]DistancerContainer, 0, cap(ss.items))
 	return old
@@ -170,8 +170,8 @@ func (ss *SearchSpace) Scan(args SearchSpaceScanArgs) (ScanChan, bool) {
 	out := make(chan ScanItem, args.Buf)
 	go func() {
 		defer close(out)
-		ss.RLock()
-		defer ss.RUnlock()
+		ss.mx.RLock()
+		defer ss.mx.RUnlock()
 		if args.UnsafeDoneCallback != nil {
 			defer args.UnsafeDoneCallback()
 		}

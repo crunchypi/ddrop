@@ -1,7 +1,6 @@
 package knnc
 
 import (
-	"fmt"
 	"reflect"
 	"sync"
 	"time"
@@ -24,7 +23,7 @@ type SearchSpaces struct {
 	maintenanceTaskInterval time.Duration
 	maintenanceActive       bool // If task loop started. Not for each step.
 
-	sync.RWMutex
+	mx sync.RWMutex
 }
 
 // NewSearchSpacesArgs is intended as an argument to the NewSearchSpaces func.
@@ -70,8 +69,8 @@ func NewSearchSpaces(args NewSearchSpacesArgs) (*SearchSpaces, bool) {
 // Len returns a tuple where [0] = number of internal SearchSpace instances,
 // and [1] = sum of all their Len method returns (i.e num of all data).
 func (ss *SearchSpaces) Len() (int, int) {
-	ss.RLock()
-	defer ss.RUnlock()
+	ss.mx.RLock()
+	defer ss.mx.RUnlock()
 
 	distancersN := 0
 	for _, searchSpace := range ss.searchSpaces {
@@ -83,8 +82,8 @@ func (ss *SearchSpaces) Len() (int, int) {
 
 // Cap returns the capacity of the internal slice of SearchSpace instances.
 func (ss *SearchSpaces) Cap() int {
-	ss.RLock()
-	defer ss.RUnlock()
+	ss.mx.RLock()
+	defer ss.mx.RUnlock()
 
 	return cap(ss.searchSpaces)
 }
@@ -94,8 +93,8 @@ func (ss *SearchSpaces) Cap() int {
 // returns 0 on the first int (i.e no SearchSpace instances). This is handled
 // automatically in SearchSpaces.AddSearchable(...).
 func (ss *SearchSpaces) Dim() int {
-	ss.RLock()
-	defer ss.RUnlock()
+	ss.mx.RLock()
+	defer ss.mx.RUnlock()
 	return ss.uniformVecDim
 }
 
@@ -110,8 +109,8 @@ func (ss *SearchSpaces) Dim() int {
 // -	Same as above _and_ if a new SearchSpace instance can't be created due
 //		to the capacity limit of this SearchSpaces instance.
 func (ss *SearchSpaces) AddSearchable(dc DistancerContainer) bool {
-	ss.RLock()
-	defer ss.RUnlock()
+	ss.mx.RLock()
+	defer ss.mx.RUnlock()
 
 	if dc == nil {
 		return false
@@ -132,7 +131,6 @@ func (ss *SearchSpaces) AddSearchable(dc DistancerContainer) bool {
 	// Try adding to any.
 	for _, searchSpace := range ss.searchSpaces {
 		if ok := searchSpace.AddSearchable(dc); ok {
-			fmt.Println("added to searchspace")
 			return true
 		}
 	}
@@ -168,8 +166,8 @@ func (ss *SearchSpaces) AddSearchable(dc DistancerContainer) bool {
 // method with the same name on all internal SearchSpace (singular) instances
 // and deletes the ones which get completely emptied (len of 0).
 func (ss *SearchSpaces) Clean() {
-	ss.Lock()
-	defer ss.Unlock()
+	ss.mx.Lock()
+	defer ss.mx.Unlock()
 
 	i := 0
 	for i < len(ss.searchSpaces) {
@@ -188,8 +186,8 @@ func (ss *SearchSpaces) Clean() {
 
 // Clear will reset the internal SearchSpace slice and return the old one.
 func (ss *SearchSpaces) Clear() []*SearchSpace {
-	ss.Lock()
-	defer ss.Unlock()
+	ss.mx.Lock()
+	defer ss.mx.Unlock()
 	old := ss.searchSpaces
 	ss.searchSpaces = make([]*SearchSpace, 0, cap(ss.searchSpaces))
 	return old
@@ -255,8 +253,8 @@ func (ss *SearchSpaces) Scan(args SearchSpacesScanArgs) (<-chan ScanChan, bool) 
 	out := make(chan ScanChan, args.Buf)
 	go func() {
 		defer close(out)
-		ss.RLock()
-		defer ss.RUnlock()
+		ss.mx.RLock()
+		defer ss.mx.RUnlock()
 
 		// Used for constraining the max amount of goroutines running at a time.
 		for _, searchSpace := range ss.searchSpaces {
@@ -290,8 +288,8 @@ func (ss *SearchSpaces) Scan(args SearchSpacesScanArgs) (<-chan ScanChan, bool) 
 // Note, one maintenance task loop can be ran at a time, so calling this method twice
 // in a row (without calling ss.StopMaintenance) will only spawn one worker.
 func (ss *SearchSpaces) StartMaintenance() {
-	ss.Lock()
-	defer ss.Unlock()
+	ss.mx.Lock()
+	defer ss.mx.Unlock()
 
 	if ss.maintenanceActive {
 		return
@@ -301,8 +299,8 @@ func (ss *SearchSpaces) StartMaintenance() {
 	go func() {
 		// Cleanup, covering all exit paths.
 		defer func() {
-			ss.Lock()
-			defer ss.Unlock()
+			ss.mx.Lock()
+			defer ss.mx.Unlock()
 			ss.maintenanceActive = false
 		}()
 
@@ -311,8 +309,8 @@ func (ss *SearchSpaces) StartMaintenance() {
 		// The return is for exiting the outer func, i.e StartMaintenance.
 		cursor := 0
 		stepf := func() bool {
-			ss.Lock()
-			defer ss.Unlock()
+			ss.mx.Lock()
+			defer ss.mx.Unlock()
 
 			// No maintenance if empty.
 			if len(ss.searchSpaces) == 0 {
@@ -348,16 +346,16 @@ func (ss *SearchSpaces) StartMaintenance() {
 
 // StopMaintenance stops the internal maintenance task loop (if running).
 func (ss *SearchSpaces) StopMaintenance() {
-	ss.Lock()
-	defer ss.Unlock()
+	ss.mx.Lock()
+	defer ss.mx.Unlock()
 
 	ss.maintenanceActive = false
 }
 
 // CheckMaintenance returns true if the maintenance task loop is active.
 func (ss *SearchSpaces) CheckMaintenance() bool {
-	ss.RLock()
-	defer ss.RUnlock()
+	ss.mx.RLock()
+	defer ss.mx.RUnlock()
 
 	return ss.maintenanceActive
 }
