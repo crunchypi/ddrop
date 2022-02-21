@@ -84,11 +84,16 @@ func TestPipelineMinimal(t *testing.T) {
 		return out, true
 	}
 
-	pipeline, _ := NewPipeline(NewPipelineArgs{
-		MapStage:    mapStage,
-		FilterStage: filterStage,
-		MergeStage:  mergeStage,
+	pipeline, ok := NewPipeline(NewPipelineArgs{
+		Cancel:        NewCancelSignal(),
+		BlockDeadline: time.Second,
+		MapStage:      mapStage,
+		FilterStage:   filterStage,
+		MergeStage:    mergeStage,
 	})
+	if !ok {
+		t.Fatal("pipeline setup not ok")
+	}
 
 	go func() {
 		for _, faucet := range faucetChans {
@@ -99,8 +104,9 @@ func TestPipelineMinimal(t *testing.T) {
 
 	// The consumeStage func consumes eagerly, result is put here.
 	result := ScoreItems{}
-	pipeline.ConsumeIter(func(scoreItems ScoreItems) {
+	pipeline.ConsumeIter(func(scoreItems ScoreItems) bool {
 		result = scoreItems
+		return true
 	})
 
 	if len(result) != k {
@@ -142,8 +148,10 @@ func TestPipelinePrefabbed(t *testing.T) {
 		ss.searchSpaces = append(ss.searchSpaces, &searchSpace)
 	}
 
-	pipeline, _ := NewPipeline(NewPipelineArgs{
+	pipeline, ok := NewPipeline(NewPipelineArgs{
 		ScanChanBuffer: uniformBaseStageArgs.NWorkers,
+		Cancel:         NewCancelSignal(),
+		BlockDeadline:  time.Second,
 		MapStage: func(in ScanChan) (<-chan ScoreItem, bool) {
 			return MapStage(MapStageArgs{
 				In: in,
@@ -180,6 +188,9 @@ func TestPipelinePrefabbed(t *testing.T) {
 			})
 		},
 	})
+	if !ok {
+		t.Fatal("pipeline setup not ok")
+	}
 
 	scanChans, _ := ss.Scan(SearchSpacesScanArgs{
 		Extent:        1,
@@ -198,10 +209,11 @@ func TestPipelinePrefabbed(t *testing.T) {
 
 	// The consumeStage func consumes eagerly, result is put here.
 	result := make(ScoreItems, k)
-	pipeline.ConsumeIter(func(scoreItems ScoreItems) {
+	pipeline.ConsumeIter(func(scoreItems ScoreItems) bool {
 		for _, scoreItem := range scoreItems {
 			result.BubbleInsert(scoreItem, true)
 		}
+		return true
 	})
 
 	if len(result) != k {

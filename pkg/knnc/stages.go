@@ -364,7 +364,7 @@ func MergeStage(args MergeStageArgs) (<-chan ScoreItems, bool) {
 			}
 
 			scoreItems := make(ScoreItems, args.K)
-			i := 0
+			i := 1 // So it won't send on the first iter.
 			for scoreItem := range args.In {
 				scoreItems.BubbleInsert(scoreItem, args.Ascending)
 

@@ -1,5 +1,7 @@
 package knnc
 
+import "time"
+
 /*
 This file contains a convenience type Pipeline which orchestrates some of the
 concurrent KNN processes in this pkg.
@@ -14,6 +16,8 @@ type Pipeline struct {
 	inputChanClosedSignal *CancelSignal          // Signal for stopping faucet.
 	outputChan            <-chan ScoreItems      // Sink.
 	scanTick              ActiveGoroutinesTicker // Current n chans fed into faucet.
+	cancel                *CancelSignal
+	deadline              time.Duration
 }
 
 // NewPipelineArgs is intended as args for the NewPipeline func.
@@ -22,6 +26,16 @@ type NewPipelineArgs struct {
 	// This should be fairly large if multiple ScanChan instances are
 	// added to this type through Pipeline.AddScanner(...).
 	ScanChanBuffer int
+
+	// Cancel is a way of explicitly cancelling the pipeline.
+	Cancel *CancelSignal
+
+	// BlockDeadline is a way of cancelling the pipeline, as an addition to
+	// the Cancel field of this struct. When using Pipeline.AddScanner to add
+	// ScanChan instances, a goroutine will forward that chan into the internal
+	// pipeline. This forwarding is done with a goroutine and this variable
+	// specifies how long it can block until cancelling.
+	BlockDeadline time.Duration
 
 	// MapStage is intended to be a concurrent stage where ScanChan is converted
 	// to chan of ScoreItem, i.e ScanChan items (mathx.Distancer) are mapped to
@@ -48,6 +62,8 @@ type NewPipelineArgs struct {
 func (args *NewPipelineArgs) Ok() bool {
 	return boolsOk([]bool{
 		args.ScanChanBuffer >= 0,
+		args.Cancel.c != nil,
+		args.BlockDeadline > 0,
 		args.MapStage != nil,
 		args.FilterStage != nil,
 		args.MergeStage != nil,
@@ -83,6 +99,7 @@ func NewPipeline(args NewPipelineArgs) (*Pipeline, bool) {
 		inputChan:             chScan,
 		inputChanClosedSignal: NewCancelSignal(),
 		outputChan:            chFinal,
+		cancel:                args.Cancel,
 	}
 
 	return &pipeline, true
@@ -101,7 +118,13 @@ func (p *Pipeline) AddScanner(s ScanChan) bool {
 	go func() {
 		defer done()
 		for distancer := range s {
-			p.inputChan <- distancer
+			select {
+			case p.inputChan <- distancer:
+			case <-p.cancel.c:
+				return
+			case <-time.After(p.deadline):
+				return
+			}
 		}
 	}()
 	return true
@@ -126,12 +149,17 @@ func (p *Pipeline) WaitThenClose() bool {
 // ConsumeIter lends access to the final step/stage in the pipeline, i.e acts as
 // a sink. Specifically, it iterates over the final channel and passes the value
 // to the receiver func. Returns false if receiver func is nil.
-func (p *Pipeline) ConsumeIter(rcv func(ScoreItems)) bool {
+func (p *Pipeline) ConsumeIter(rcv func(ScoreItems) bool) bool {
 	if rcv == nil {
 		return false
 	}
 	for scoreItems := range p.outputChan {
-		rcv(scoreItems)
+		if p.cancel.Cancelled() {
+			return true
+		}
+		if !rcv(scoreItems) {
+			return true
+		}
 	}
 
 	return true

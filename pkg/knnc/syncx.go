@@ -43,6 +43,9 @@ func (cs *CancelSignal) Cancelled() bool {
 	return cs.closed
 }
 
+// Ok returns true if the instance was created correctly (with NewCancelSignal()).
+func (cs *CancelSignal) Ok() bool { return cs.c != nil }
+
 // ActiveGoroutinesTicker simply wraps an int and a RWMutes and helps tracking
 // the number of currently running goroutines. Usage is simple, increment the
 // ticker by calling the AddAwait() method, then invoke the returned callback

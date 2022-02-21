@@ -149,12 +149,12 @@ type SearchSpaceScanArgs struct {
 }
 
 // Ok validates SearchSpaceScanArgs. Returns true iff:
-//	(1) args.Extend >= 0.0 and <= 1.0.
+//	(1) args.Extent > 0.0 and <= 1.0.
 //	(2) Embedded BaseWorkerArgs.Ok() is true.
 func (args *SearchSpaceScanArgs) Ok() bool {
 	return boolsOk([]bool{
 		// Not strinctly needed but is an indicator of logic flaw.
-		args.Extent >= 0.0 && args.Extent <= 1.0,
+		args.Extent > 0.0 && args.Extent <= 1.0,
 		args.BaseWorkerArgs.Ok(),
 	})
 }
