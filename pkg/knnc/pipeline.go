@@ -100,6 +100,7 @@ func NewPipeline(args NewPipelineArgs) (*Pipeline, bool) {
 		inputChanClosedSignal: NewCancelSignal(),
 		outputChan:            chFinal,
 		cancel:                args.Cancel,
+		deadline:              args.BlockDeadline,
 	}
 
 	return &pipeline, true

@@ -14,8 +14,8 @@ func TestPipelineMinimal(t *testing.T) {
 	//dim := 3
 	query := newTVec(0)
 	pool := make([]mathx.Distancer, 0, 9)
-	for i := 1; i < 10; i++ { // Note 1 - 9.
-		pool = append(pool, newTVec(float64(i))) // NOTE don't copy.
+	for i := 1; i < 9; i++ { // Note 1 - 9.
+		pool = append(pool, newTVec(float64(i)))
 	}
 
 	k := 2            // k in knn
@@ -25,10 +25,10 @@ func TestPipelineMinimal(t *testing.T) {
 	faucetChans := make([]ScanChan, 0, len(pool))
 	for _, vec := range pool {
 		out := make(chan ScanItem)
-		go func(vec mathx.Distancer) {
+		go func(vec mathx.Distancer, out chan ScanItem) {
 			defer close(out)
 			out <- ScanItem{Distancer: vec}
-		}(vec)
+		}(vec, out)
 
 		faucetChans = append(faucetChans, out)
 	}
@@ -43,7 +43,6 @@ func TestPipelineMinimal(t *testing.T) {
 				if !ok {
 					continue
 				}
-
 				out <- ScoreItem{Distancer: scanItem.Distancer, Score: score, Set: true}
 			}
 		}()
@@ -78,7 +77,6 @@ func TestPipelineMinimal(t *testing.T) {
 				r.BubbleInsert(scoreItem, ascending)
 			}
 			out <- r
-
 		}()
 
 		return out, true
@@ -86,7 +84,7 @@ func TestPipelineMinimal(t *testing.T) {
 
 	pipeline, ok := NewPipeline(NewPipelineArgs{
 		Cancel:        NewCancelSignal(),
-		BlockDeadline: time.Second,
+		BlockDeadline: time.Second * 10,
 		MapStage:      mapStage,
 		FilterStage:   filterStage,
 		MergeStage:    mergeStage,
@@ -97,7 +95,9 @@ func TestPipelineMinimal(t *testing.T) {
 
 	go func() {
 		for _, faucet := range faucetChans {
-			pipeline.AddScanner(faucet)
+			if !pipeline.AddScanner(faucet) {
+				panic("add after close")
+			}
 		}
 		pipeline.WaitThenClose()
 	}()
