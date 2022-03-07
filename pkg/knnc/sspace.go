@@ -77,7 +77,7 @@ func (ss *SearchSpace) AddSearchable(dc DistancerContainer) bool {
 
 	d := dc.Distancer() // Validation.
 	// == nil does not work as expected.
-	if reflect.ValueOf(d).IsNil() {
+	if d == nil || reflect.ValueOf(d).IsNil() {
 		return false
 	}
 
@@ -114,7 +114,8 @@ func (ss *SearchSpace) Clean() {
 		// will not work if it's actually nil, due to some odd
 		// internatl (Go) behaviour. Do not change without running
 		// the unit test for this func.
-		if reflect.ValueOf(ss.items[i].Distancer()).IsNil() {
+		d := ss.items[i].Distancer()
+		if d == nil || reflect.ValueOf(d).IsNil() {
 			// _Should_ be re-sliced with O(1) going by Go docs/code.
 			ss.items = append(ss.items[:i], ss.items[i+1:]...)
 			continue
@@ -190,7 +191,7 @@ func (ss *SearchSpace) Scan(args SearchSpaceScanArgs) (ScanChan, bool) {
 		for i < l {
 			distancer := ss.items[i].Distancer()
 			// != nil does not work as expected.
-			if !reflect.ValueOf(distancer).IsNil() {
+			if !(distancer == nil || reflect.ValueOf(distancer).IsNil()) {
 				select {
 				case out <- ScanItem{Distancer: distancer}:
 				case <-args.Cancel.c:

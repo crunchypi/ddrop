@@ -139,17 +139,18 @@ func MapStage(args MapStageArgs) (<-chan ScoreItem, bool) {
 			}
 
 			for scanItem := range args.In {
+				d := scanItem.Distancer
 				// Distancer might have become nil while in the queue.
 				// == nil check does not work as expected.
-				if reflect.ValueOf(scanItem.Distancer).IsNil() {
+				if d == nil || reflect.ValueOf(d).IsNil() {
 					continue
 				}
 
-				scoreItem, ok := args.MapFunc(scanItem.Distancer)
+				scoreItem, ok := args.MapFunc(d)
 				if !ok {
 					continue
 				}
-				scoreItem.Distancer = scanItem.Distancer
+				scoreItem.Distancer = d
 				scoreItem.Set = true
 
 				select {

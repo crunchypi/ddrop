@@ -118,7 +118,7 @@ func (ss *SearchSpaces) AddSearchable(dc DistancerContainer) bool {
 
 	d := dc.Distancer() // For validation.
 	// == nil does not work as expected.
-	if reflect.ValueOf(d).IsNil() {
+	if d == nil || reflect.ValueOf(d).IsNil() {
 		return false
 	}
 
