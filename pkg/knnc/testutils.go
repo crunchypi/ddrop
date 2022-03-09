@@ -1,6 +1,10 @@
 package knnc
 
-import "github.com/crunchypi/ddrop/pkg/mathx"
+import (
+	"time"
+
+	"github.com/crunchypi/ddrop/pkg/mathx"
+)
 
 type tVec = mathx.SafeVec
 
@@ -15,10 +19,14 @@ func newTVecRand(dim int) *tVec {
 
 var _ DistancerContainer = new(data) // Hint.
 type data struct {
-	v *tVec
+	v       *tVec
+	Expires time.Time
 }
 
 func (d *data) Distancer() mathx.Distancer {
+	if d.Expires != (time.Time{}) && time.Now().After(d.Expires) {
+		return nil
+	}
 	return d.v
 }
 

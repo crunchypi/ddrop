@@ -15,20 +15,20 @@ func TestSearchSpaceAddSearchable(t *testing.T) {
 		t.Fatal("added a DistancerContainer with nil internal Distancer ")
 	}
 
-	if !ss.AddSearchable(&data{newTVecRand(3)}) {
+	if !ss.AddSearchable(&data{v: newTVecRand(3)}) {
 		t.Fatal("could not add to fresh search space")
 	}
 
-	if ss.AddSearchable(&data{newTVecRand(9)}) {
+	if ss.AddSearchable(&data{v: newTVecRand(9)}) {
 		t.Fatal("vec dim consistency check failed")
 	}
 
-	if !ss.AddSearchable(&data{newTVecRand(3)}) {
+	if !ss.AddSearchable(&data{v: newTVecRand(3)}) {
 		t.Fatal("could not reach search space cap")
 	}
 
 	ss.items = make([]DistancerContainer, 0, 10)
-	if !ss.AddSearchable(&data{newTVecRand(9)}) {
+	if !ss.AddSearchable(&data{v: newTVecRand(9)}) {
 		t.Fatal("vec dim consistency enforced even though ss is empty")
 	}
 }
@@ -36,9 +36,9 @@ func TestSearchSpaceAddSearchable(t *testing.T) {
 func TestSearchSpaceClear(t *testing.T) {
 	ss := SearchSpace{
 		items: []DistancerContainer{
-			&data{newTVecRand(1)},
-			&data{newTVecRand(2)},
-			&data{newTVecRand(3)},
+			&data{v: newTVecRand(1)},
+			&data{v: newTVecRand(2)},
+			&data{v: newTVecRand(3)},
 		},
 	}
 
@@ -52,13 +52,14 @@ func TestSearchSpaceClear(t *testing.T) {
 }
 
 func TestSearchSpaceClean(t *testing.T) {
+	ttl := time.Millisecond * 10
 	e1 := 1.
-	forDelete := &data{newTVec(e1)}
+	forDelete := &data{v: newTVec(e1), Expires: time.Now().Add(ttl)}
 	ss := SearchSpace{
 		items: []DistancerContainer{
-			&data{newTVec(2)},
+			&data{v: newTVec(2)},
 			forDelete,
-			&data{newTVec(3)},
+			&data{v: newTVec(3)},
 		},
 	}
 
@@ -67,7 +68,7 @@ func TestSearchSpaceClean(t *testing.T) {
 		t.Fatal("first clean removed non-nil item(s)")
 	}
 
-	forDelete.v = nil // Mark for deletion.
+	time.Sleep(ttl)
 	ss.Clean()
 	if ss.Len() != 2 {
 		t.Fatal("second clean did not remove the nil item")
@@ -84,9 +85,9 @@ func TestSearchSpaceClean(t *testing.T) {
 func TestSearchSpaceScanFull(t *testing.T) {
 	ss := SearchSpace{
 		items: []DistancerContainer{
-			&data{newTVec(1)},
-			&data{newTVec(2)},
-			&data{newTVec(3)},
+			&data{v: newTVec(1)},
+			&data{v: newTVec(2)},
+			&data{v: newTVec(3)},
 		},
 	}
 
@@ -118,8 +119,8 @@ func TestSearchSpaceScanFull(t *testing.T) {
 func TestSearchSpaceScanPartial(t *testing.T) {
 	ss := SearchSpace{
 		items: []DistancerContainer{
-			&data{newTVec(1)},
-			&data{newTVec(2)},
+			&data{v: newTVec(1)},
+			&data{v: newTVec(2)},
 		},
 	}
 
@@ -153,8 +154,8 @@ func TestSearchSpaceScanPartial(t *testing.T) {
 func TestSearchSpaceScanStopped(t *testing.T) {
 	ss := SearchSpace{
 		items: []DistancerContainer{
-			&data{newTVec(1)},
-			&data{newTVec(2)},
+			&data{v: newTVec(1)},
+			&data{v: newTVec(2)},
 		},
 	}
 
@@ -188,8 +189,8 @@ func TestSearchSpaceScanConcurrent(t *testing.T) {
 		// Need more than one item so neither scanner goroutines gets freed
 		// after only one item/iteration; this makes the test more correct.
 		items: []DistancerContainer{
-			&data{newTVec(1)},
-			&data{newTVec(1)},
+			&data{v: newTVec(1)},
+			&data{v: newTVec(1)},
 		},
 	}
 

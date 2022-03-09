@@ -144,7 +144,7 @@ func TestPipelinePrefabbed(t *testing.T) {
 	}
 
 	for i := 1; i < n; i++ { // Note, starts with 1.
-		searchSpace := SearchSpace{items: []DistancerContainer{&data{newTVec(float64(i))}}}
+		searchSpace := SearchSpace{items: []DistancerContainer{&data{v: newTVec(float64(i))}}}
 		ss.searchSpaces = append(ss.searchSpaces, &searchSpace)
 	}
 
