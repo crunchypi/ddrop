@@ -83,11 +83,14 @@ func TestPipelineMinimal(t *testing.T) {
 	}
 
 	pipeline, ok := NewPipeline(NewPipelineArgs{
-		Cancel:        NewCancelSignal(),
-		BlockDeadline: time.Second * 10,
-		MapStage:      mapStage,
-		FilterStage:   filterStage,
-		MergeStage:    mergeStage,
+		BaseWorkerArgs: BaseWorkerArgs{
+			Buf:    1,
+			Cancel: NewCancelSignal(),
+			TTL:    time.Second * 10,
+		},
+		MapStage:    mapStage,
+		FilterStage: filterStage,
+		MergeStage:  mergeStage,
 	})
 	if !ok {
 		t.Fatal("pipeline setup not ok")
@@ -129,9 +132,9 @@ func TestPipelinePrefabbed(t *testing.T) {
 	uniformBaseStageArgs := BaseStageArgs{
 		NWorkers: 10,
 		BaseWorkerArgs: BaseWorkerArgs{
-			Buf:           10,
-			Cancel:        cancel,
-			BlockDeadline: time.Second,
+			Buf:    10,
+			Cancel: cancel,
+			TTL:    time.Second,
 		},
 	}
 
@@ -144,14 +147,16 @@ func TestPipelinePrefabbed(t *testing.T) {
 	}
 
 	for i := 1; i < n; i++ { // Note, starts with 1.
-		searchSpace := SearchSpace{items: []DistancerContainer{&data{v: newTVec(float64(i))}}}
+		searchSpace := SearchSpace{
+			items: []DistancerContainer{
+				&data{v: newTVec(float64(i))},
+			},
+		}
 		ss.searchSpaces = append(ss.searchSpaces, &searchSpace)
 	}
 
 	pipeline, ok := NewPipeline(NewPipelineArgs{
-		ScanChanBuffer: uniformBaseStageArgs.NWorkers,
-		Cancel:         NewCancelSignal(),
-		BlockDeadline:  time.Second,
+		BaseWorkerArgs: uniformBaseStageArgs.BaseWorkerArgs,
 		MapStage: func(in ScanChan) (<-chan ScoreItem, bool) {
 			return MapStage(MapStageArgs{
 				In: in,

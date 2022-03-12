@@ -31,13 +31,14 @@ type BaseWorkerArgs struct {
 	// Buf specifies the output chan buffer for this worker. Must be >= 0.
 	Buf int
 	// Cancel is a way of explicitly cancelling this worker and making it exit.
-	// Also see 'BlockDeadline' (this struct), it is a time-based failsafe.
+	// Also see 'TTL' (field of this struct), it is a time-based failsafe.
 	// Must be initialized correctly (see CancelSignal doc).
 	Cancel *CancelSignal
-	// BlockDeadline is time-based failsafe for this worker, intended for leak
-	// prevention. Also see 'Cancel' (this struct) for explicit cancellation.
-	// Must be > 0.
-	BlockDeadline time.Duration
+	// TTL specifies how long a worker can be alive. Must be > 0 for the
+	// BaseWorkerArgs.Ok() method to return true (this is enforced in this pkg
+	// as a failsafe against leaks). Also see the Cancel field for explicit
+	// cancellation.
+	TTL time.Duration
 	// UnsafeDoneCallback is called when a gorougine is done. It is named as
 	// unsafe because it is done in a goroutine (i.e concurrently) and the
 	// safety depends on usage. May be nil.
@@ -47,13 +48,31 @@ type BaseWorkerArgs struct {
 // Ok validates BaseWorkerArgs. Returns true iff:
 // 	(1) args.Buf >0 0
 //	(2) args.CancelSignal was initialized correctly (with NewCancelSignal()).
-//	(3) args.BlockDeadline > 0.
+//	(3) args.TTL > 0.
 func (args *BaseWorkerArgs) Ok() bool {
 	return boolsOk([]bool{
 		args.Buf >= 0,
 		args.Cancel.c != nil,
-		args.BlockDeadline > 0,
+		args.TTL > 0,
 	})
+}
+
+// DeadlineSignal simply waits for args.TTL, then cancels the first returned
+// signal. The second returned signal is a way of aborting the internal waiting
+// goroutine (note; doing so will not cancel the first returned signal).
+func (args *BaseWorkerArgs) DeadlineSignal() (*CancelSignal, *CancelSignal) {
+	signalExternal := NewCancelSignal()
+	signalInternal := NewCancelSignal()
+	go func() {
+		select {
+		case <-time.After(args.TTL):
+			signalExternal.Cancel()
+		case <-signalInternal.c:
+			return
+		}
+	}()
+
+	return signalExternal, signalInternal
 }
 
 // BaseStageArgs contains arguments common for stages (concurrency). Specifically,
@@ -131,6 +150,9 @@ func MapStage(args MapStageArgs) (<-chan ScoreItem, bool) {
 	wg := sync.WaitGroup{}
 	wg.Add(args.NWorkers)
 
+	deadlineSignal, deadlineSignalCancel := args.DeadlineSignal()
+	defer deadlineSignalCancel.Cancel()
+
 	for i := 0; i < args.NWorkers; i++ {
 		go func() {
 			defer wg.Done()
@@ -157,7 +179,7 @@ func MapStage(args MapStageArgs) (<-chan ScoreItem, bool) {
 				case out <- scoreItem:
 				case <-args.Cancel.c:
 					return
-				case <-time.After(args.BlockDeadline):
+				case <-deadlineSignal.c:
 					return
 				}
 			}
@@ -227,6 +249,9 @@ func FilterStage(args FilterStageArgs) (<-chan ScoreItem, bool) {
 	wg := sync.WaitGroup{}
 	wg.Add(args.NWorkers)
 
+	deadlineSignal, deadlineSignalCancel := args.DeadlineSignal()
+	defer deadlineSignalCancel.Cancel()
+
 	for i := 0; i < args.NWorkers; i++ {
 		go func() {
 			defer wg.Done()
@@ -243,7 +268,7 @@ func FilterStage(args FilterStageArgs) (<-chan ScoreItem, bool) {
 				case out <- scoreItem:
 				case <-args.Cancel.c:
 					return
-				case <-time.After(args.BlockDeadline):
+				case <-deadlineSignal.c:
 					return
 				}
 			}
@@ -329,6 +354,12 @@ func MergeStage(args MergeStageArgs) (<-chan ScoreItems, bool) {
 	}
 
 	out := make(chan ScoreItems, args.NWorkers)
+	wg := sync.WaitGroup{}
+	wg.Add(args.NWorkers)
+
+	deadlineSignal, deadlineSignalCancel := args.DeadlineSignal()
+	defer deadlineSignalCancel.Cancel()
+
 	// Reduces code duplication. False means abort.
 	trySend := func(scoreItems ScoreItems) bool {
 		// No point in sending empty. Check before costly .Trim() call.
@@ -347,13 +378,10 @@ func MergeStage(args MergeStageArgs) (<-chan ScoreItems, bool) {
 			return true
 		case <-args.Cancel.c:
 			return false
-		case <-time.After(args.BlockDeadline):
-			return false
+		case <-deadlineSignal.c:
+			return true
 		}
 	}
-
-	wg := sync.WaitGroup{}
-	wg.Add(args.NWorkers)
 
 	// Each goroutine will receive through the chan and merge into _each_their_own_
 	// slice of ScoreItems, which will be streamed to the 'out' chan periodically.

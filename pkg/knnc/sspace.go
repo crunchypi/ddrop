@@ -4,7 +4,6 @@ import (
 	"math"
 	"reflect"
 	"sync"
-	"time"
 
 	"github.com/crunchypi/ddrop/pkg/mathx"
 )
@@ -170,6 +169,9 @@ func (ss *SearchSpace) Scan(args SearchSpaceScanArgs) (ScanChan, bool) {
 	}
 
 	out := make(chan ScanItem, args.Buf)
+	deadlineSignal, deadlineSignalCancel := args.DeadlineSignal()
+	defer deadlineSignalCancel.Cancel()
+
 	go func() {
 		defer close(out)
 		ss.mx.RLock()
@@ -196,7 +198,7 @@ func (ss *SearchSpace) Scan(args SearchSpaceScanArgs) (ScanChan, bool) {
 				case out <- ScanItem{Distancer: distancer}:
 				case <-args.Cancel.c:
 					return
-				case <-time.After(args.BlockDeadline):
+				case <-deadlineSignal.c:
 					return
 				}
 			}

@@ -112,9 +112,9 @@ func TestSearchSpacesScanOutputCorrectness(t *testing.T) {
 		BaseStageArgs: BaseStageArgs{
 			NWorkers: 10, // Should not matter.
 			BaseWorkerArgs: BaseWorkerArgs{
-				Buf:           10,
-				Cancel:        NewCancelSignal(),
-				BlockDeadline: time.Second,
+				Buf:    10,
+				Cancel: NewCancelSignal(),
+				TTL:    time.Second,
 			},
 		},
 	}
@@ -151,10 +151,10 @@ func TestSearchSpacesScanInternalBehaviourCorrectness(t *testing.T) {
 	nSearchSpaces := nWorkers * 10
 	nDistancers := nSearchSpaces * 10
 
-	// account for the goroutine running the Scan method itself and the
-	// goroutine in it that is used by time.After func in the select block.
+	// account for the goroutines running the Scan method itself and the
+	// goroutine in it that is used for the deadline signal.
 	overhead := 2
-	expectedMax := startGoroutineN + overhead + nWorkers
+	expectedMax := startGoroutineN + overhead + (nWorkers)
 
 	// Used to check if the scanner actually goes up to expectedMax.
 	lowestN := 0
@@ -184,9 +184,9 @@ func TestSearchSpacesScanInternalBehaviourCorrectness(t *testing.T) {
 		BaseStageArgs: BaseStageArgs{
 			NWorkers: nWorkers,
 			BaseWorkerArgs: BaseWorkerArgs{
-				Buf:           10,
-				Cancel:        NewCancelSignal(),
-				BlockDeadline: time.Second,
+				Buf:    10,
+				Cancel: NewCancelSignal(),
+				TTL:    time.Second,
 			},
 		},
 	}
@@ -266,7 +266,8 @@ func TestSearchSpacesMaintenanceCleaning(t *testing.T) {
 	go func() {
 		for _, index := range markDeleteIndexes {
 			time.Sleep(interval)
-			// No locking since SearchSpaces have a read-only relationship with 'distancers'.
+			// No locking since SearchSpaces have a read-only relationship
+			// with 'distancers'.
 			dataSlice[index].v = nil
 			wg.Done()
 		}
@@ -283,7 +284,8 @@ func TestSearchSpacesMaintenanceCleaning(t *testing.T) {
 	}
 
 	if reflect.ValueOf(ss.searchSpaces[0].items[0].Distancer()).IsNil() {
-		s := "Remaining DistancerContainer in SearchSpaces.searchSpaces gives nil distancer"
+		s := "Remaining DistancerContainer in SearchSpaces.searchSpaces"
+		s += "gives nil distancer"
 		t.Fatal(s)
 	}
 

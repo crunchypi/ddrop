@@ -94,9 +94,9 @@ func TestSearchSpaceScanFull(t *testing.T) {
 	ch, ok := ss.Scan(SearchSpaceScanArgs{
 		Extent: 1.,
 		BaseWorkerArgs: BaseWorkerArgs{
-			Buf:           1,
-			Cancel:        NewCancelSignal(),
-			BlockDeadline: time.Second,
+			Buf:    1,
+			Cancel: NewCancelSignal(),
+			TTL:    time.Second,
 		},
 	})
 
@@ -129,9 +129,9 @@ func TestSearchSpaceScanPartial(t *testing.T) {
 	ch, ok := ss.Scan(SearchSpaceScanArgs{
 		Extent: extent,
 		BaseWorkerArgs: BaseWorkerArgs{
-			Buf:           1,
-			Cancel:        NewCancelSignal(),
-			BlockDeadline: time.Second,
+			Buf:    1,
+			Cancel: NewCancelSignal(),
+			TTL:    time.Second,
 		},
 	})
 
@@ -165,9 +165,9 @@ func TestSearchSpaceScanStopped(t *testing.T) {
 		BaseWorkerArgs: BaseWorkerArgs{
 			// Must not be buffered or else the block below won't work,
 			// since one item might be put in the chan before close.
-			Buf:           0,
-			Cancel:        cancel,
-			BlockDeadline: time.Second,
+			Buf:    0,
+			Cancel: cancel,
+			TTL:    time.Second,
 		},
 	})
 
@@ -197,9 +197,9 @@ func TestSearchSpaceScanConcurrent(t *testing.T) {
 	args := SearchSpaceScanArgs{
 		Extent: 1,
 		BaseWorkerArgs: BaseWorkerArgs{
-			Buf:           0,
-			Cancel:        NewCancelSignal(),
-			BlockDeadline: time.Second,
+			Buf:    0,
+			Cancel: NewCancelSignal(),
+			TTL:    time.Second,
 		},
 	}
 

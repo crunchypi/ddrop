@@ -21,9 +21,9 @@ func commonTestingCodeBaseStageArgs() BaseStageArgs {
 	return BaseStageArgs{
 		NWorkers: 100,
 		BaseWorkerArgs: BaseWorkerArgs{
-			Buf:           50,
-			Cancel:        NewCancelSignal(),
-			BlockDeadline: time.Second * 3,
+			Buf:    50,
+			Cancel: NewCancelSignal(),
+			TTL:    time.Second * 3,
 		},
 	}
 }

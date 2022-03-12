@@ -251,6 +251,9 @@ func (ss *SearchSpaces) Scan(args SearchSpacesScanArgs) (<-chan ScanChan, bool) 
 	}
 
 	out := make(chan ScanChan, args.Buf)
+	deadlineSignal, deadlineSignalCancel := args.DeadlineSignal()
+	defer deadlineSignalCancel.Cancel()
+
 	go func() {
 		defer close(out)
 		ss.mx.RLock()
@@ -272,7 +275,7 @@ func (ss *SearchSpaces) Scan(args SearchSpacesScanArgs) (<-chan ScanChan, bool) 
 			case out <- ch:
 			case <-args.Cancel.c:
 				return
-			case <-time.After(args.BlockDeadline):
+			case <-deadlineSignal.c:
 				return
 			}
 		}

@@ -1,7 +1,5 @@
 package knnc
 
-import "time"
-
 /*
 This file contains a convenience type Pipeline which orchestrates some of the
 concurrent KNN processes in this pkg.
@@ -12,30 +10,21 @@ concurrent KNN processes in this pkg.
 // types of this pkg (both singular and plural) and the different pre-defined
 // stage funcs, though that is optional.
 type Pipeline struct {
+	baseWorkerArgs BaseWorkerArgs
+
 	inputChan             chan ScanItem          // Faucet.
 	inputChanClosedSignal *CancelSignal          // Signal for stopping faucet.
 	outputChan            <-chan ScoreItems      // Sink.
 	scanTick              ActiveGoroutinesTicker // Current n chans fed into faucet.
-	cancel                *CancelSignal
-	deadline              time.Duration
 }
 
 // NewPipelineArgs is intended as args for the NewPipeline func.
 type NewPipelineArgs struct {
-	// ScanChanBuffer specifies the ScanChan buffer in this pipeline.
-	// This should be fairly large if multiple ScanChan instances are
-	// added to this type through Pipeline.AddScanner(...).
-	ScanChanBuffer int
-
-	// Cancel is a way of explicitly cancelling the pipeline.
-	Cancel *CancelSignal
-
-	// BlockDeadline is a way of cancelling the pipeline, as an addition to
-	// the Cancel field of this struct. When using Pipeline.AddScanner to add
-	// ScanChan instances, a goroutine will forward that chan into the internal
-	// pipeline. This forwarding is done with a goroutine and this variable
-	// specifies how long it can block until cancelling.
-	BlockDeadline time.Duration
+	// Note that the Buf field here is used as buffer for the ScanChan
+	// instances fed into the pipeline with Pipeline.AddScanner(...).
+	// Also nota that the different stages here will not 'inherit' these
+	// worker args.
+	BaseWorkerArgs
 
 	// MapStage is intended to be a concurrent stage where ScanChan is converted
 	// to chan of ScoreItem, i.e ScanChan items (mathx.Distancer) are mapped to
@@ -55,15 +44,13 @@ type NewPipelineArgs struct {
 }
 
 // Ok validates NewPipelineArgs. Returns true iff:
-//	(1) args.ScanChanBuffer >= 0,
+//	(1) args.BaseWorkerArgs.Ok() == true,
 //	(2)	args.MapStage != nil,
 //	(3)	args.FilterStage != nil,
 //	(4)	args.MergeStage != nil.
 func (args *NewPipelineArgs) Ok() bool {
 	return boolsOk([]bool{
-		args.ScanChanBuffer >= 0,
-		args.Cancel.c != nil,
-		args.BlockDeadline > 0,
+		args.BaseWorkerArgs.Ok(),
 		args.MapStage != nil,
 		args.FilterStage != nil,
 		args.MergeStage != nil,
@@ -80,7 +67,7 @@ func NewPipeline(args NewPipelineArgs) (*Pipeline, bool) {
 		return nil, false
 	}
 
-	chScan := make(chan ScanItem, args.ScanChanBuffer)
+	chScan := make(chan ScanItem, args.Buf)
 	chMap, ok := args.MapStage(chScan)
 	if !ok || chScan == nil {
 		return nil, false
@@ -99,12 +86,9 @@ func NewPipeline(args NewPipelineArgs) (*Pipeline, bool) {
 		inputChan:             chScan,
 		inputChanClosedSignal: NewCancelSignal(),
 		outputChan:            chFinal,
-		cancel:                args.Cancel,
-		deadline:              args.BlockDeadline,
+		baseWorkerArgs:        args.BaseWorkerArgs,
 	}
-
 	return &pipeline, true
-
 }
 
 // AddScanner connects a specified ScanChan to the internal ScanChan that is fed
@@ -116,14 +100,19 @@ func (p *Pipeline) AddScanner(s ScanChan) bool {
 	}
 
 	done := p.scanTick.AddAwait()
+
+	// Just for the deadline signal method
+	deadlineSignal, deadlineSignalCancel := p.baseWorkerArgs.DeadlineSignal()
+	defer deadlineSignalCancel.Cancel()
+
 	go func() {
 		defer done()
 		for distancer := range s {
 			select {
 			case p.inputChan <- distancer:
-			case <-p.cancel.c:
+			case <-p.baseWorkerArgs.Cancel.c:
 				return
-			case <-time.After(p.deadline):
+			case <-deadlineSignal.c:
 				return
 			}
 		}
@@ -155,7 +144,7 @@ func (p *Pipeline) ConsumeIter(rcv func(ScoreItems) bool) bool {
 		return false
 	}
 	for scoreItems := range p.outputChan {
-		if p.cancel.Cancelled() {
+		if p.baseWorkerArgs.Cancel.Cancelled() {
 			return true
 		}
 		if !rcv(scoreItems) {
