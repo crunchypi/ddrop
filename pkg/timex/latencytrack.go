@@ -42,6 +42,11 @@ type NewLatencyTrackerArgs struct {
 	// A latency tracker tracks latency during a time frame, so link
 	// sizes are measured as a time.Duration.
 	MinChainLinkSize time.Duration
+	// StandardPeriod is meant for consistency. The method LatencyTracker.Average
+	// accepts a time.Duration, but there are cases where this arg shouldn't
+	// change. As such, LatencyTracker.AverageSTD can be called, which uses
+	// this field val instead.
+	StandardPeriod time.Duration
 }
 
 // Ok returns true if the instance was set up correctly. Specifically:
@@ -112,6 +117,19 @@ func (lt *LatencyTracker) Register(delta time.Duration) {
 	lt.head.nWaiters++
 }
 
+// RegisterCallback is a convenience method around LatencyTracker.Register(...).
+// It returns a callback that, when invoked, will automatically call the Register
+// method with the delta between now and then.
+//
+// For instance, calling "defer lt.RegisterCallback()" at the start of a func f,
+// will register the whole execution time of f.
+func (lt *LatencyTracker) RegisterCallback() func() {
+	then := time.Now()
+	return func() {
+		lt.Register(time.Now().Sub(then))
+	}
+}
+
 // Average gives the average latency for the last period. e.g if 'period' is
 // 1 min, then it will return the average latency for the last minute.
 //
@@ -147,4 +165,10 @@ func (lt *LatencyTracker) Average(period time.Duration) (time.Duration, bool) {
 
 	average := cumulativeWait / time.Duration(nWaiters)
 	return average, withinBounds
+}
+
+// AverageSTD is equivalent to lt.Average(x) where x is the StandardPeriod field
+// of NewLatencyTrackerArgs (used when setting up this instance).
+func (lt *LatencyTracker) AverageSTD() (time.Duration, bool) {
+	return lt.Average(lt.cfg.StandardPeriod)
 }
