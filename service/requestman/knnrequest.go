@@ -2,12 +2,17 @@ package requestman
 
 import (
     "time"
+
+    "github.com/crunchypi/ddrop/pkg/knnc"
+    "github.com/crunchypi/ddrop/pkg/mathx"
 )
 
 /*
 File for primary types:
     KNNArgs         : Fairly customizable arguments for making KNN requests.
- */
+    KNNRequest      : Helper type for interfacing with pkg/knnc
+    KNNEnqueueResult: Where knn request results go.
+*/
 
 // KNNMethod specifies the distance function used for a request.
 type KNNMethod int
@@ -77,7 +82,7 @@ type KNNArgs struct {
 	TTL       time.Duration
 }
 
-// Ok checks if KNNArgs meets the minimum requirement.
+// Ok checks if KNNArgs meets the minimum configuration requirement.
 // Returns true if:
 //  r.Priority > 0,
 //  r.QueryVec != nil,
@@ -96,3 +101,70 @@ func (r *KNNArgs) Ok() bool {
 	ok = ok && r.TTL > 0
 	return ok
 }
+
+
+// KNNEnqueueResult is used to receive the results of a KNN request/query.
+type KNNEnqueueResult struct {
+    // Pipe is the destination of a KNN request/query.
+	Pipe   chan knnc.ScoreItems
+    // Cancel can be used to cancel a request. Should be called when
+    // the deadline for a request (e.g KNNArgs.TTL is exceeded after
+    // a request is made).
+	Cancel *knnc.CancelSignal
+}
+
+// knnRequest is a wrapper around KNNArgs and its primary purpose is to
+// contain methods that directly interfaces pkg/knnc. In other words,
+// it is the type uses KNNArgs to create a knn result, which is sent
+// through knnRequest.enqueueResult.Pipe. Set it up with newKNNRequest.
+type knnRequest struct {
+	args     *KNNArgs
+    // Converted from args.QueryVec.
+	queryVec mathx.Distancer
+	//----------------------------------------------------------------
+	// NOTE: For internal operations, these must be set for a query
+	// to be processed with the KNNRequest.process() method.
+	//----------------------------------------------------------------
+
+    // When the query is created. Will be used in combination with
+    // KNNArgs.TTL to know when to cancel a pipeline.
+	created time.Time
+	// Destination of the request.
+	enqueueResult KNNEnqueueResult
+}
+
+
+// newKNNRequest is a convenience func for creating a knnRequest instance.
+// It sets up the internal KNNEnqueueResult instance safely and sets the
+// 'created' field to now.
+//
+// Note that this does not check the args. For safety, use knnRequest.Ok(),
+// if that is needed.
+func newKNNRequest(args *KNNArgs) knnRequest {
+	return knnRequest{
+		args:     args,
+		queryVec: mathx.NewSafeVec(args.QueryVec...),
+		enqueueResult: KNNEnqueueResult{
+			Pipe:   make(chan knnc.ScoreItems),
+			Cancel: knnc.NewCancelSignal(),
+		},
+		created: time.Now(),
+	}
+}
+
+
+// Ok checks if the instance meets the minimum safety requirements.
+// Returns true if:
+//  r.args.Ok(),
+//  r.enqueueResult.Cancel.Ok(),
+//  r.enqueueResult.Pipe != nil,
+//  r.created != default (time.Time{})
+func (r *knnRequest) Ok() bool {
+	ok := true
+	ok = ok && r.args.Ok()
+	ok = ok && r.enqueueResult.Cancel.Ok()
+	ok = ok && r.enqueueResult.Pipe != nil
+    ok = ok && r.created != time.Time{}
+	return ok
+}
+
