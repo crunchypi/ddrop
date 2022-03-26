@@ -168,3 +168,81 @@ func (r *knnRequest) Ok() bool {
 	return ok
 }
 
+
+/*
+--------------------------------------------------------------------------------
+Below are methods that convert the request into convenience types and funcs that
+interact with the knnc package.
+--------------------------------------------------------------------------------
+*/
+
+// Shorthand def
+
+// mapStageF is compatible with knnc.NewPipelineArgs.MapStage.
+type mapStageF = func(knnc.ScanChan) (<-chan knnc.ScoreItem, bool)
+
+
+// toBaseWorkerArgs simply converts knnRequest into knnc.BaseWorkerArgs, using
+// some state from the internal knnRequest.args. Specifically: 
+//  Buf:    knnRequest.args.Priority
+//  Cancel: knnRequest.enqueueResult.Cancel
+//  TTL:    knnRequest.args.TTL - (time since knnRequest.created)
+func (r *knnRequest) toBaseWorkerArgs() knnc.BaseWorkerArgs {
+	return knnc.BaseWorkerArgs{
+		Buf:    r.args.Priority,
+		Cancel: r.enqueueResult.Cancel,
+		// No point in keeping workers alive for longer than is acceptable by the
+		// query, as it is assumed that it'll cancel after that point anyway.
+		TTL: r.args.TTL - time.Now().Sub(r.created),
+	}
+}
+
+// toBaseStageArgs simply converts a knnRequest to knnc.BaseStageArgs, using
+// some state from the internal knnRequest.args. Specifically:
+//  NWorkers:       knnRequest.args.Priority
+//  BaseWorkerArgs: knnRequest.toBaseWorkerArgs()
+func (r *knnRequest) toBaseStageArgs() knnc.BaseStageArgs {
+	return knnc.BaseStageArgs{
+		NWorkers:       r.args.Priority,
+		BaseWorkerArgs: r.toBaseWorkerArgs(),
+	}
+}
+
+// toMapFunc simply converts a knnRequest into a func that can be used with
+// knnc.MapStagePartialArgs.MapFunc. It is a func where 'other' is compared
+// against the internal knnRequest.queryVec to produce a distance score, using
+// distance method specifies with knnRequest.KNNMethod. That distance score is
+// returned in the form of knnc.ScoreItem. The bool is whether the distance
+// function succeeded or not.
+func (r *knnRequest) toMapFunc() func(other mathx.Distancer) (knnc.ScoreItem, bool) {
+	return func(other mathx.Distancer) (knnc.ScoreItem, bool) {
+		score := 0.
+		ok := true
+
+		switch r.args.KNNMethod {
+		case KNNMethodEuclideanDistance:
+			score, ok = r.queryVec.EuclideanDistance(other)
+		case KNNMethodCosineSimilarity:
+			score, ok = r.queryVec.CosineSimilarity(other)
+		default:
+			return knnc.ScoreItem{}, false
+		}
+
+		return knnc.ScoreItem{Score: score}, ok
+	}
+}
+
+
+// toMapStage simply converts a knnRequest into a func that is compatible with
+// knnc.NewPipelineArgs.MapStage.
+func (r *knnRequest) toMapStage() mapStageF {
+	return func(in knnc.ScanChan) (<-chan knnc.ScoreItem, bool) {
+		return knnc.MapStage(knnc.MapStageArgs{
+			In: in,
+			MapStagePartialArgs: knnc.MapStagePartialArgs{
+				MapFunc:       r.toMapFunc(),
+				BaseStageArgs: r.toBaseStageArgs(),
+			},
+		})
+	}
+}
