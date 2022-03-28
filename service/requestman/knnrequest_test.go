@@ -134,3 +134,42 @@ func TestKNNRequestToFilterStage(t *testing.T) {
 		t.Fatal("unexpected score:", score)
 	}
 }
+
+func TestKNNRequestToMergeStage(t *testing.T) {
+	r := newKNNRequest(&KNNArgs{
+		TTL:       time.Second,
+		Priority:  1,
+		Ascending: true,
+		K:         1,
+	})
+
+	chI := make(chan knnc.ScoreItem)
+	chO, ok := r.toMergeStage()(chI)
+	if !ok {
+		t.Fatal("failed starting merge stage")
+	}
+
+	go func() {
+		chI <- knnc.ScoreItem{Score: 3, Set: true} // Reject since k=1.
+		chI <- knnc.ScoreItem{Score: 1, Set: true} // Best.
+		close(chI)
+	}()
+
+	score := 0.
+	for scoreItems := range chO {
+		for _, scoreItem := range scoreItems {
+			if !scoreItem.Set {
+				continue
+			}
+			score += scoreItem.Score
+		}
+	}
+
+	if score == 0 {
+		t.Fatal("suspecting unset score")
+	}
+
+	if score != 1 {
+		t.Fatal("unexpected score:", score)
+	}
+}

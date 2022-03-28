@@ -177,8 +177,11 @@ interact with the knnc package.
 // mapStageF is compatible with knnc.NewPipelineArgs.MapStage.
 type mapStageF = func(knnc.ScanChan) (<-chan knnc.ScoreItem, bool)
 
-// filterStage is compatible with knnc.NewPipelineArgs.FilterStage.
+// filterStageF is compatible with knnc.NewPipelineArgs.FilterStage.
 type filterStageF = func(<-chan knnc.ScoreItem) (<-chan knnc.ScoreItem, bool)
+
+// mergeStageF is compatible with knnc.NewPipelineArgs.MergeStage.
+type mergeStageF = func(<-chan knnc.ScoreItem) (<-chan knnc.ScoreItems, bool)
 
 // toBaseWorkerArgs simply converts knnRequest into knnc.BaseWorkerArgs, using
 // some state from the internal knnRequest.args. Specifically:
@@ -233,8 +236,8 @@ func (r *knnRequest) toMapFunc() func(other mathx.Distancer) (knnc.ScoreItem, bo
 // toMapStage simply converts a knnRequest into a func that is compatible with
 // knnc.NewPipelineArgs.MapStage. It uses knnc.MapStage and constructs its args
 // with the following:
-//  - knnRequest.toBaseStageArgs()
-//  - knnRequest.toMapFunc()
+//  - MapStagePartialArgs.MapFunc = knnRequest.toMapFunc()
+//  - MapStagePartialArgs.BaseStageArgs = knnRequest.toMapFunc()
 func (r *knnRequest) toMapStage() mapStageF {
 	return func(in knnc.ScanChan) (<-chan knnc.ScoreItem, bool) {
 		return knnc.MapStage(knnc.MapStageArgs{
@@ -266,16 +269,36 @@ func (r *knnRequest) toFilterFunc() func(score knnc.ScoreItem) bool {
 }
 
 // toFilterStage simply converts a knnRequest into a func that is compatible with
-// knn.NewPipelineArgs.FilterStage. It uses knnc.FilterStage and constructs its
+// knnc.NewPipelineArgs.FilterStage. It uses knnc.FilterStage and constructs its
 // arguments with the following:
-//  - knnRequest.toBaseStageArgs()
-//  - knnRequest.toFilterFunc()
+//  - knnc.FilterStagePartialArgs.FilterFunc = knnRequest.toFilterFunc()
+//  - knnc.FilterStagePartialArgs.BaseStageArgs = knnRequest.toBaseStageArgs()
 func (r *knnRequest) toFilterStage() filterStageF {
 	return func(in <-chan knnc.ScoreItem) (<-chan knnc.ScoreItem, bool) {
 		return knnc.FilterStage(knnc.FilterStageArgs{
 			In: in,
 			FilterStagePartialArgs: knnc.FilterStagePartialArgs{
 				FilterFunc:    r.toFilterFunc(),
+				BaseStageArgs: r.toBaseStageArgs(),
+			},
+		})
+	}
+}
+
+// toMergeStage simply converts a knnRequest into a func that is compatible with
+// knnc.NewPipelineArgs.MergeStage. It uses knnc.MergeStage and constructs its
+// arguments with the following:
+//  - knnc.MergeStagePartialArgs.K = knnRequest.args.K
+//  - knnc.MergeStagePartialArgs.Ascending = knnRequest.args.Ascending
+//  - knnc.MergeStagePartialArgs.BaseStageArgs = knnRequest.toBaseStageArgs()
+func (r *knnRequest) toMergeStage() mergeStageF {
+	return func(in <-chan knnc.ScoreItem) (<-chan knnc.ScoreItems, bool) {
+		return knnc.MergeStage(knnc.MergeStageArgs{
+			In: in,
+			MergeStagePartialArgs: knnc.MergeStagePartialArgs{
+				K:             r.args.K,
+				Ascending:     r.args.Ascending,
+				SendInterval:  2, // TODO, arbitrary.
 				BaseStageArgs: r.toBaseStageArgs(),
 			},
 		})
