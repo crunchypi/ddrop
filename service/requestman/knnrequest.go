@@ -304,3 +304,19 @@ func (r *knnRequest) toMergeStage() mergeStageF {
 		})
 	}
 }
+
+// toPipeline simply converts a knnRequest into a knnc.NewPipelineArgs that is
+// fed into knnc.Pipeline, from which both the returns are returned here. The
+// args are constructed as follows:
+//  knnc.NewPipelineArgs.BaseWorkerArgs = knnRequest.toBaseWorkerArgs()
+//  knnc.NewPipelineArgs.MapStage = knnRequest.toMapStage()
+//  knnc.NewPipelineArgs.FilterStage = knnRequest.toFilterStage()
+//  knnc.NewPipelineArgs.MergeStage = knnRequest.toMergeStage()
+func (r *knnRequest) toPipeline() (*knnc.Pipeline, bool) {
+	return knnc.NewPipeline(knnc.NewPipelineArgs{
+		BaseWorkerArgs: r.toBaseWorkerArgs(),
+		MapStage:       r.toMapStage(),
+		FilterStage:    r.toFilterStage(),
+		MergeStage:     r.toMergeStage(),
+	})
+}

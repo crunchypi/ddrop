@@ -173,3 +173,54 @@ func TestKNNRequestToMergeStage(t *testing.T) {
 		t.Fatal("unexpected score:", score)
 	}
 }
+
+func TestKNNRequestToPipeline(t *testing.T) {
+	r := newKNNRequest(&KNNArgs{
+		//Namespace:,
+		Priority:  1,
+		QueryVec:  []float64{5},
+		KNNMethod: KNNMethodEuclideanDistance,
+		Ascending: true,
+		K:         1,
+		Extent:    1,
+		Accept:    0,
+		Reject:    5,
+		TTL:       time.Second,
+	})
+
+	// Simulate faucet.
+	chIn := make(chan knnc.ScanItem)
+	go func() {
+		chIn <- knnc.ScanItem{Distancer: mathx.NewSafeVec(2)} // dist to query = 3
+		chIn <- knnc.ScanItem{Distancer: mathx.NewSafeVec(4)} // dist to query = 1
+		chIn <- knnc.ScanItem{Distancer: mathx.NewSafeVec(3)} // dist to query = 2
+		close(chIn)
+	}()
+
+	pipe, ok := r.toPipeline()
+	if !ok {
+		t.Fatal("failed setup of pipeline")
+	}
+
+	// Push faucet -> pipeline.
+	if !pipe.AddScanner(chIn) {
+		t.Fatal("pipe failed to add scanner")
+	}
+	go func() { pipe.WaitThenClose() }()
+
+	result := make(knnc.ScoreItems, r.args.K)
+	pipe.ConsumeIter(func(scoreItems knnc.ScoreItems) bool {
+		for _, scoreItem := range scoreItems {
+			result.BubbleInsert(scoreItem, r.args.Ascending)
+		}
+		return true
+	})
+
+	// KNNRequest.K = 1
+	if trimmed := result.Trim(); len(trimmed) != 1 {
+		t.Fatal("unexpected len:", len(trimmed))
+	}
+	if score := result[0].Score; score != 1 {
+		t.Fatal("unexpected score:", score)
+	}
+}
