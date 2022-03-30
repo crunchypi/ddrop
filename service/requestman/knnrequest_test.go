@@ -224,3 +224,50 @@ func TestKNNRequestToPipeline(t *testing.T) {
 		t.Fatal("unexpected score:", score)
 	}
 }
+
+func TestKNNRequestConsume(t *testing.T) {
+	n := 1000
+	dim := 3
+
+	ss, _ := knnc.NewSearchSpaces(knnc.NewSearchSpacesArgs{
+		SearchSpacesMaxCap:      n,
+		SearchSpacesMaxN:        n,
+		MaintenanceTaskInterval: 1,
+	})
+
+	for i := 0; i < n; i++ {
+		v, _ := mathx.NewSafeVecRand(dim)
+		ss.AddSearchable(&DistancerContainer{D: v})
+	}
+
+	r := newKNNRequest(&KNNArgs{
+		Namespace: "",
+		Priority:  1,
+		QueryVec:  []float64{1, 1, 1},
+		KNNMethod: KNNMethodEuclideanDistance,
+		Ascending: true,
+		K:         1,
+		Extent:    1,
+		Accept:    0,
+		Reject:    5,
+		TTL:       time.Second,
+	})
+
+	go r.consume(ss)
+
+	// Doesn't check any correctness, just that something is found.
+	// Correctness is checked with other funcs and the knnc pkg.
+	set := false
+	for scoreItems := range r.enqueueResult.Pipe {
+		for _, scoreItem := range scoreItems {
+			if !scoreItem.Set {
+				continue
+			}
+			set = true
+		}
+	}
+
+	if !set {
+		t.Fatal("didnt get any result")
+	}
+}

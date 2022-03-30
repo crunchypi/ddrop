@@ -198,6 +198,23 @@ func (r *knnRequest) toBaseWorkerArgs() knnc.BaseWorkerArgs {
 	}
 }
 
+//
+func (r *knnRequest) toScanChans(
+	ss *knnc.SearchSpaces,
+) (
+	<-chan knnc.ScanChan,
+	bool,
+) {
+	if ss == nil {
+		return nil, false
+	}
+
+	return ss.Scan(knnc.SearchSpacesScanArgs{
+		Extent:        r.args.Extent,
+		BaseStageArgs: r.toBaseStageArgs(),
+	})
+}
+
 // toBaseStageArgs simply converts a knnRequest to knnc.BaseStageArgs, using
 // some state from the internal knnRequest.args. Specifically:
 //  NWorkers:       knnRequest.args.Priority
@@ -319,4 +336,84 @@ func (r *knnRequest) toPipeline() (*knnc.Pipeline, bool) {
 		FilterStage:    r.toFilterStage(),
 		MergeStage:     r.toMergeStage(),
 	})
+}
+
+// consume tries to create a pkg/knnc pipeline, send knnRequest.args (KNNArgs)
+// through it, then forward the result to knnRequest.enqueueResult.Pipe. Fail
+// cases are (where r=this instance of knnRequest):
+//  - 1 r.Ok() == false
+//  - 2 r.enqueueResult.Pipe == nil
+//  - 3 r.enqueueResylt.Cancel == nil
+//  - 4 (arg) ss.Scan(...) failed (using r.args.Extent and r.toBaseStageARgs())
+//  - 5 r.toPipeline() returned false
+//
+// In all cases, the r.enqueueResult.Pipe chan will be closed. In case 5,
+// r.enqueueResult.Cancel will be cancelled.
+//
+// Additionally, this method also uses the r.args.Accept field to abort a search
+// when enough (r.args.K) elements of sufficient quality are found.
+func (r *knnRequest) consume(ss *knnc.SearchSpaces) bool {
+	defer close(r.enqueueResult.Pipe)
+
+	// Check args.
+	if !r.Ok() {
+		return false
+	}
+
+	// Check destination.
+	if r.enqueueResult.Pipe == nil || r.enqueueResult.Cancel == nil {
+		return false
+	}
+
+	// Try start scan(ners).
+	scanChans, ok := ss.Scan(knnc.SearchSpacesScanArgs{
+		Extent:        r.args.Extent,
+		BaseStageArgs: r.toBaseStageArgs(),
+	})
+	if !ok {
+		return false
+	}
+
+	// Try start pipeline.
+	pipeline, ok := r.toPipeline()
+	if !ok {
+		// Setup of at least one stage (in toPipeline) failed, kill all of them,
+		// including the scanner in the previous block.
+		r.enqueueResult.Cancel.Cancel()
+		return false
+	}
+
+	// Push faucet -> pipeline.
+	go func() {
+		defer pipeline.WaitThenClose()
+		for scanChan := range scanChans {
+			if !pipeline.AddScanner(scanChan) {
+				return
+			}
+		}
+	}()
+
+	result := make(knnc.ScoreItems, r.args.K)
+	pipeline.ConsumeIter(func(scoreItems knnc.ScoreItems) bool {
+		for _, scoreItem := range scoreItems {
+			// Mechanism for stopping the query when r.K amoung of scores
+			// are found with better than r.Accept scores.
+			worst := result[len(result)-1]
+			done := false
+			done = done || worst.Score <= r.args.Accept && r.args.Ascending
+			done = done || worst.Score >= r.args.Accept && !r.args.Ascending
+
+			// done && worst.Set = true if there are k results and all of them
+			// satisfy the qi.request.Accept scores. !(true) = stop.
+			if done && worst.Set {
+				r.enqueueResult.Cancel.Cancel()
+				return false
+			}
+			result.BubbleInsert(scoreItem, r.args.Ascending)
+		}
+		return true
+	})
+
+	r.enqueueResult.Pipe <- result
+	return true
 }
