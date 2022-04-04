@@ -461,3 +461,94 @@ func TestTimeSlopeExtent(t *testing.T) {
 		t.Fatal("positive slope, implying increase in time per step.")
 	}
 }
+
+// Decreases KNNRequest 'accepted' scores for each step. With Cosine similarity,
+// this means that worse and worse scores are accepted as a tradeoff for speed.
+// This func validates this behaviour.
+func TestTimeSlopeAccept(t *testing.T) {
+	poolSize := 2_000
+	poolDim := 3
+
+	n := 100
+	m := 10
+
+	slope, ok := testTimeSlope(testTimeSlopeArgs{
+		poolSize: poolSize,
+		poolDim:  poolDim,
+		n:        n,
+		m:        m,
+		f: func(i int) *KNNArgs {
+			v, _ := randFloat64Slice(poolDim)
+
+			// Increasing by n. Add constant to avoid 0 (KNNRequest.Ok() must pass).
+			step := (1. / float64(n) * float64(i)) + 0.000000001
+			// Decreasing by n.
+			accept := 1 - step
+
+			return &KNNArgs{
+				Namespace: "",
+				Priority:  1,
+				QueryVec:  v,
+				KNNMethod: KNNMethodCosineSimilarity,
+				Ascending: false,
+				K:         3,
+				Extent:    1,
+				Accept:    accept,
+				Reject:    0,
+				TTL:       time.Minute,
+			}
+		},
+	})
+
+	if !ok {
+		t.Fatal("timeSlope func returned false, test is broken")
+	}
+	if slope > 0 {
+		t.Fatal("positive slope, implying increase in time per step.")
+	}
+}
+
+// Increases KNNRequest 'rejected' scores for each step. With Cosine similarity,
+// this means that more and more scores are excluded from the 'merge' stage of
+// the knn query, where scores are compared for the knn part. As such, the query
+// should get faster as a benefit, this func validates this behavior.
+func TestTimeSlopeReject(t *testing.T) {
+	poolSize := 2_000
+	poolDim := 3
+
+	n := 100
+	m := 10
+
+	slope, ok := testTimeSlope(testTimeSlopeArgs{
+		poolSize: poolSize,
+		poolDim:  poolDim,
+		n:        n,
+		m:        m,
+		f: func(i int) *KNNArgs {
+			v, _ := randFloat64Slice(poolDim)
+
+			// Increasing by n. Add constant to avoid 0 (KNNRequest.Ok() must pass).
+			step := (1. / float64(n) * float64(i)) + 0.000000001
+
+			return &KNNArgs{
+				Namespace: "",
+				Priority:  1,
+				QueryVec:  v,
+				KNNMethod: KNNMethodCosineSimilarity,
+				Ascending: false,
+				K:         3,
+				Extent:    1,
+				Accept:    1,
+				Reject:    step,
+				TTL:       time.Minute,
+			}
+		},
+	})
+
+	if !ok {
+		t.Fatal("timeSlope func returned false, test is broken")
+	}
+	if slope > 0 {
+		t.Fatal("positive slope, implying increase in time per step.")
+	}
+}
