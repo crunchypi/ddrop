@@ -552,3 +552,54 @@ func TestTimeSlopeReject(t *testing.T) {
 		t.Fatal("positive slope, implying increase in time per step.")
 	}
 }
+
+// Runs all accuracy/speed tradeoffs (tested individually with TestTimeSlopeXYZ
+// funcs above) combined.
+func TestTimeSlopeCombined(t *testing.T) {
+	poolSize := 2_000
+	poolDim := 3
+
+	n := 100
+	m := 10
+
+	slope, ok := testTimeSlope(testTimeSlopeArgs{
+		poolSize: poolSize,
+		poolDim:  poolDim,
+		n:        n,
+		m:        m,
+		f: func(i int) *KNNArgs {
+			v, _ := randFloat64Slice(poolDim)
+
+			// Increasing by n. Add constant to avoid 0 (KNNRequest.Ok() must pass).
+			step := (1. / float64(n) * float64(i)) + 0.000000001
+			// Div by 3 explanation: decreasing 'Extent', decreasing 'Accept', or
+			// increasing 'Reject' will trade accuracy for speed, simply because
+			// fewer vecs are completely evaluated. So tweaking _all_ of those fields
+			// will naturally amplify this effect. The issue is that the consumer of
+			// this code (testTimeSlope) will assume failure (and return false) if 0
+			// results are yielded from a query. As such, this 'step' variable is
+			// divided to de-amplify.
+			step /= 3
+
+			return &KNNArgs{
+				Namespace: "",
+				Priority:  1 + i, // Increasing. +1 so priority is not zero (will fail).
+				QueryVec:  v,
+				KNNMethod: KNNMethodCosineSimilarity,
+				Ascending: false,
+				K:         3,
+				Extent:    1 - step, // Decreasing.
+				Accept:    1 - step, // Decreasing.
+				Reject:    step / 3, // increasing.
+				TTL:       time.Minute,
+			}
+		},
+	})
+
+	if !ok {
+		t.Fatal("timeSlope func returned false, test is broken")
+	}
+	if slope > 0 {
+		t.Fatal("positive slope, implying increase in time per step.")
+	}
+}
