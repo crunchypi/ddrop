@@ -2,7 +2,7 @@ package requestman
 
 import (
 	"fmt"
-    "math/rand"
+	"math/rand"
 	"testing"
 	"time"
 
