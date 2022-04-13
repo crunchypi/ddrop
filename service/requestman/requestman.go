@@ -2,10 +2,34 @@ package requestman
 
 import (
 	"context"
+	"time"
 
 	"github.com/crunchypi/ddrop/pkg/knnc"
+	"github.com/crunchypi/ddrop/pkg/mathx"
 	"github.com/crunchypi/ddrop/pkg/timex"
 )
+
+// DistancerContainer implements knnc.DistancerContainer.
+type DistancerContainer struct {
+	D mathx.Distancer
+	// TODO: Check performance. As of now, each call to Distancer() method does
+	// a time.Now() call; the alternative is to have a bool in addition, as that
+	// is cheaper. But that would also require a sync.RWMutes due to how this
+	// will be used concurrently in the knnc pkg.
+	Expires time.Time
+}
+
+// Distancer returns the internal mathx.Distancer if the Expiration field is set
+// and after time.Now().
+func (d *DistancerContainer) Distancer() mathx.Distancer {
+	if d.Expires != (time.Time{}) && time.Now().After(d.Expires) {
+		return nil
+	}
+	return d.D
+}
+
+// Symbolic.
+var _ knnc.DistancerContainer = &DistancerContainer{}
 
 // Handle is the main way of interacting with this pkg. It handles data storage,
 // KNN requests, info retrieval, etc.
@@ -81,6 +105,7 @@ func NewHandle(args NewHandleArgs) (*Handle, bool) {
 			latency:       lt,
 			queue:         make(chan knnQueueItem, args.KNNQueueBuf),
 			maxConcurrent: args.KNNQueueMaxConcurrent,
+			ctx:           args.Ctx,
 		},
 		ctx: args.Ctx,
 	}
@@ -96,7 +121,48 @@ func (h *Handle) waitThenQuit() {
 	select {
 	case <-h.ctx.Done():
 		for _, v := range h.knnNamespaces.items {
+			if v.searchSpaces == nil {
+				continue
+			}
+
 			v.searchSpaces.StopMaintenance()
 		}
 	}
+}
+
+// AddData adds data to a namespace, using a DistancerContainer(.Distancer()) as
+// an index. A new namespace will be created if one does not already exist.
+//
+// TODO: currently, only the Distancer is stored, as any other means
+// of persisting data is not yet implemented.
+func (h *Handle) AddData(ns string, d DistancerContainer, data []byte) bool {
+	return h.knnNamespaces.put(ns, d)
+}
+
+// KNN attempts to enqueue a KNN request, see docs for KNNEnqueueResult for more
+// details. Returns a false bool on the following conditions:
+// - args.Ok() == false
+// - args.Namespace is unknown / not yet created with Handle.AddData(...).
+// - args.TTL is lower than the estimated queue+query time.
+func (h *Handle) KNN(args KNNArgs) (KNNEnqueueResult, bool) {
+	if !args.Ok() {
+		return KNNEnqueueResult{}, false
+	}
+
+	// Namespace check.
+	nsItem, ok := h.knnNamespaces.get(args.Namespace)
+	if !ok {
+		return KNNEnqueueResult{}, false
+	}
+
+	// Latency check.
+	avgQueueWait, _ := h.knnQueue.latency.AverageSTD()
+	avgQueryWait, _ := nsItem.latency.AverageSTD()
+	if avgQueueWait+avgQueryWait > args.TTL {
+		return KNNEnqueueResult{}, false
+	}
+
+	request := newKNNRequest(&args)
+	h.knnQueue.queue <- knnQueueItem{nsItem: nsItem, request: request}
+	return request.enqueueResult, true
 }
