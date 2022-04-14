@@ -132,21 +132,41 @@ func (h *Handle) waitThenQuit() {
 
 // AddData adds data to a namespace, using a DistancerContainer(.Distancer()) as
 // an index. A new namespace will be created if one does not already exist.
+// Returns false on either of the following conditions:
+// - ctx used when creating the Handle (NewHandle(...)) signalled done.
+// - DistancerContainer.D == nil.
+// - the knnc.SearchSpaces instance used for this namespace returns false
+//   on the method AddSearchable(d).
 //
 // TODO: currently, only the Distancer is stored, as any other means
 // of persisting data is not yet implemented.
 func (h *Handle) AddData(ns string, d DistancerContainer, data []byte) bool {
+	// Check if handle is shut down.
+	select {
+	case <-h.ctx.Done():
+		return false
+	default:
+	}
+
 	return h.knnNamespaces.put(ns, d)
 }
 
 // KNN attempts to enqueue a KNN request, see docs for KNNEnqueueResult for more
 // details. Returns a false bool on the following conditions:
 // - args.Ok() == false
+// - ctx used when creating the Handle (NewHandle(...)) signalled done.
 // - args.Namespace is unknown / not yet created with Handle.AddData(...).
 // - args.TTL is lower than the estimated queue+query time.
 func (h *Handle) KNN(args KNNArgs) (KNNEnqueueResult, bool) {
 	if !args.Ok() {
 		return KNNEnqueueResult{}, false
+	}
+
+	// Check if handle is shut down.
+	select {
+	case <-h.ctx.Done():
+		return KNNEnqueueResult{}, false
+	default:
 	}
 
 	// Namespace check.
