@@ -166,3 +166,90 @@ func (h *Handle) KNN(args KNNArgs) (KNNEnqueueResult, bool) {
 	h.knnQueue.queue <- knnQueueItem{nsItem: nsItem, request: request}
 	return request.enqueueResult, true
 }
+
+/*
+--------------------------------------------------------------------------------
+Below are info/metadata methods on top of T Handle, namespaced with T info.
+--------------------------------------------------------------------------------
+*/
+
+// info is a namespacing for info methods related to T Handle.
+// Do note that single-use is encouraged (but not enforced) in order to prevent
+// copies of the nested *Handle, which can lead to leaks.
+type info struct {
+	h *Handle
+}
+
+// Info is used as namespacing for methods related to metadata / general info.
+// Single-use is encouraged to prevent leaks, as the returned "info" instance
+// contains a ptr to the Handle instance. So call h.Info().Xyz() directly,
+// instead of something like "x := h.Info()".
+func (h *Handle) Info() info {
+	return info{h}
+}
+
+// SSpaceNamespaces returns all search space namespaces.
+func (i *info) SSpaceNamespaces() []string {
+	return i.h.knnNamespaces.keys()
+}
+
+// SSPaceNamespace checks if a particular search space namespace exists.
+func (i *info) SSpaceNamespace(key string) bool {
+	return i.h.knnNamespaces.key(key)
+}
+
+// SSpaceDim forwards the call to- and return from knnc.SearchSpaces.Dim for a
+// search space associated with a namespace. Returns false if the namespace
+// does not exist.
+func (i *info) SSpaceDim(key string) (int, bool) {
+	ssItem, ok := i.h.knnNamespaces.get(key)
+	if !ok {
+		return 0, false
+	}
+
+	return ssItem.searchSpaces.Dim(), true
+}
+
+// SSpaceLen forwards the call to- and return from knnc.SearchSpaces.Len for a
+// search space associated with a namespace. Returns false if the namespace
+// does not exist.
+func (i *info) SSpaceLen(key string) (int, int, bool) {
+	ssItem, ok := i.h.knnNamespaces.get(key)
+	if !ok {
+		return 0, 0, false
+	}
+
+	nSearchSpaces, nData := ssItem.searchSpaces.Len()
+	return nSearchSpaces, nData, true
+}
+
+// SSpaceCap forwards the call to- and return from knnc.SearchSpaces.Cap for a
+// search space associated with a namespace. Returns false if the namespace
+// does not exist.
+func (i *info) SSpaceCap(key string) (int, bool) {
+	ssItem, ok := i.h.knnNamespaces.get(key)
+	if !ok {
+		return 0, false
+	}
+
+	return ssItem.searchSpaces.Cap(), true
+}
+
+// KNNQueueLatency forwards the call to- and return from the "Average" method
+// of the timex.LatencyTracker instance associated with the KNN queue.
+// In other words, it returns the average KNN queue latency for a given period.
+func (i *info) KNNQueueLatency(d time.Duration) (time.Duration, bool) {
+	return i.h.knnQueue.latency.Average(d)
+}
+
+// KNNQueryLatency forwards the call to- and return from the "Average" method
+// of the timex.LatencyTracker instance associated with a searchspace namespace.
+// In other words, it returns the average KNN query latency for a given period
+// for a particular search space.
+func (i *info) KNNQueryLatency(k string, d time.Duration) (time.Duration, bool) {
+	ns, ok := i.h.knnNamespaces.get(k)
+	if !ok {
+		return 0, false
+	}
+	return ns.latency.Average(d)
+}
