@@ -160,8 +160,9 @@ func TestTLLMaintain(t *testing.T) {
 }
 
 func TestTLLTimeRange(t *testing.T) {
-	maxN := 6
-	minD := time.Second
+	maxN := 99
+	minD := time.Microsecond * 11
+	allD := time.Duration(maxN) * minD
 
 	tll := timedLinkedList[int]{
 		inner:            linkedList[timed[int]]{},
@@ -169,16 +170,19 @@ func TestTLLTimeRange(t *testing.T) {
 		minChainLinkSize: minD,
 	}
 
+	// Precise placement. Head: stamp, and so on.
 	stamp := time.Now()
 	for i := 0; i < maxN; i++ {
-		tll.maintain()
-		time.Sleep(minD)
+		item := timed[int]{}
+		item.created = stamp.Add(-minD * time.Duration(i))
+		tll.inner.add(item)
 	}
 
-	halfStamp := time.Now().Sub(stamp) / 2
-	links := tll.timeRange(halfStamp)
+	// Half.
+	span := 0.5
+	links := tll.timeRange(stamp, time.Duration(float64(allD)*span))
 
-	if len(links) != maxN/2 {
+	if len(links) != int(float64(maxN)*span) {
 		t.Fatal("unexpected result len:", len(links))
 	}
 }

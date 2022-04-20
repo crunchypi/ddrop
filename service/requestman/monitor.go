@@ -135,16 +135,17 @@ func (tll *timedLinkedList[T]) Inner() *linkedList[timed[T]] {
 //   creation time of old head is greater than tll.minChainLinkSize.
 // - Trims the tail such that n links does not exceed tll.maxChainLinkN
 func (tll *timedLinkedList[T]) maintain() {
+	now := time.Now()
 	// Handle nil head.
 	if tll.inner.head == nil {
-		tll.inner.add(timed[T]{created: time.Now()})
+		tll.inner.add(timed[T]{created: now})
 	}
 
 	// Handle expired head.
-	headDelta := time.Now().Sub(tll.inner.head.payload.created)
+	headDelta := now.Sub(tll.inner.head.payload.created)
 	if headDelta > tll.minChainLinkSize {
 		newHead := linkedListItem[timed[T]]{}
-		newHead.payload.created = time.Now()
+		newHead.payload.created = now
 		newHead.next = tll.inner.head
 		tll.inner.head = &newHead
 	}
@@ -157,13 +158,15 @@ func (tll *timedLinkedList[T]) maintain() {
 
 // timeRange returns all links that were created since time.Now() - period.
 // So period=time.Minute will return all nodes creted the last minute.
-func (tll *timedLinkedList[T]) timeRange(period time.Duration) []timed[T] {
-	stamp := time.Now()
-	tll.maintain()
+func (tll *timedLinkedList[T]) timeRange(t time.Time, d time.Duration) []timed[T] {
+	// Max number of links/nodes to include, a slight optimization.
+	resultMaxN := int(d / tll.minChainLinkSize)
+	result := make([]timed[T], 0, resultMaxN)
 
-	result := make([]timed[T], 0, tll.maxChainLinkN)
 	tll.inner.trim(func(i int, item *linkedListItem[timed[T]]) bool {
-		include := stamp.Sub(item.payload.created) <= period
+		include := true
+		include = include && (i+1) <= resultMaxN
+		include = include && t.Sub(item.payload.created) < d
 
 		if include {
 			result = append(result, item.payload)
@@ -172,5 +175,6 @@ func (tll *timedLinkedList[T]) timeRange(period time.Duration) []timed[T] {
 		return include
 	})
 
+	tll.maintain()
 	return result
 }
