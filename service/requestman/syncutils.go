@@ -6,8 +6,8 @@ import (
 
 // safeChanIterArgs is intended as args for func safeChanIter.
 type safeChanIterArgs[T any] struct {
-	ch  <-chan T // ch is chan to iterate over.
-	ctx context.Context // ctx is a way of aborting iteration of ch.
+	ch  <-chan T             // ch is chan to iterate over.
+	ctx context.Context      // ctx is a way of aborting iteration of ch.
 	rcv func(element T) bool // rcv func gets elements from ch. Return false to stop.
 }
 
@@ -27,8 +27,8 @@ func (args *safeChanIterArgs[T]) ok() bool {
 // safeChanIter is a way of iterating somewhat safely over a channel. The reason
 // it is implemented is because the normal range iteration over a chan can hang
 // very happily. The difference here is that a context.Context can be used to
-// mitigate leaks (using context.WithDeadline(...), for instance). 
-// 
+// mitigate leaks (using context.WithDeadline(...), for instance).
+//
 // Returns false if args.ok() returns false See doc for args T for more details.
 func safeChanIter[T any](args safeChanIterArgs[T]) bool {
 	if !args.ok() {

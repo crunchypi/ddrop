@@ -1,9 +1,14 @@
 package requestman
 
 import (
+	"math/rand"
 	"testing"
 	"time"
 )
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
 /*
 --------------------------------------------------------------------------------
@@ -97,19 +102,16 @@ func TestLLTrim(t *testing.T) {
 		current = current.next
 	}
 
-	// Trim everything besides item.payload == 0, i.e keep only head.
-	ll.trim(func(index int, item *linkedListItem[int]) bool {
-		return item.payload == 0
-	})
-
-	tailIndex, tail := ll.tail()
-
-	// Check for zero since tail should now be head.
-	if tailIndex != 0 {
-		t.Fatal("unexpected tail index:", tailIndex)
-	}
-	if tail.payload != 0 {
-		t.Fatal("unexpected tail payload:", tail.payload)
+	// Trim everything, one at a time from tail.
+	for i := nItems - 1; i >= 0; i-- {
+		ll.trim(func(j int, item *linkedListItem[int]) bool {
+			cond := i > j
+			return cond
+		})
+		l := ll.len()
+		if l != i {
+			t.Fatalf("unexpected len of ll, want %v, have %v (iter %v)", i, l, i)
+		}
 	}
 }
 
@@ -160,7 +162,7 @@ func TestTLLMaintain(t *testing.T) {
 }
 
 func TestTLLTimeRange(t *testing.T) {
-	maxN := 99
+	maxN := 88
 	minD := time.Microsecond * 11
 	allD := time.Duration(maxN) * minD
 
@@ -180,7 +182,7 @@ func TestTLLTimeRange(t *testing.T) {
 
 	// Half.
 	span := 0.5
-	links := tll.timeRange(stamp, time.Duration(float64(allD)*span))
+	links := tll.timeRange(stamp, stamp.Add(-time.Duration(float64(allD)*span)))
 
 	if len(links) != int(float64(maxN)*span) {
 		t.Fatal("unexpected result len:", len(links))

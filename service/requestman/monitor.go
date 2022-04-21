@@ -152,21 +152,33 @@ func (tll *timedLinkedList[T]) maintain() {
 
 	// Handle tail limit.
 	tll.inner.trim(func(i int, item *linkedListItem[timed[T]]) bool {
-		return i < tll.maxChainLinkN
+		// -1 because i is zero indexed.
+		return i <= tll.maxChainLinkN-1
 	})
 }
 
-// timeRange returns all links that were created since time.Now() - period.
-// So period=time.Minute will return all nodes creted the last minute.
-func (tll *timedLinkedList[T]) timeRange(t time.Time, d time.Duration) []timed[T] {
+// timeRange returns all links that were created in the given time range..
+// Note that 'start' should be _after_ 'end', which might be counter-intuitive.
+// The reason being that the linked list goes from head to tail in a reverse
+// chronological order, so [now-x*0]-[now-x*1]-[now-x*2] etc.
+//
+// Example: to get items created the last minute, one should do this:
+//  now := time.Now()
+//  x.timeRange(now, now.Add(-time.Minute))
+//
+func (tll *timedLinkedList[T]) timeRange(start, end time.Time) []timed[T] {
 	// Max number of links/nodes to include, a slight optimization.
+	d := start.Sub(end)
 	resultMaxN := int(d / tll.minChainLinkSize)
+	if resultMaxN <= 0 {
+		return []timed[T]{}
+	}
 	result := make([]timed[T], 0, resultMaxN)
 
 	tll.inner.trim(func(i int, item *linkedListItem[timed[T]]) bool {
 		include := true
 		include = include && (i+1) <= resultMaxN
-		include = include && t.Sub(item.payload.created) < d
+		include = include && start.Sub(item.payload.created) < d
 
 		if include {
 			result = append(result, item.payload)
