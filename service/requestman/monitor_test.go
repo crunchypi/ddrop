@@ -2,9 +2,12 @@ package requestman
 
 import (
 	"math/rand"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/crunchypi/ddrop/pkg/knnc"
 	"github.com/crunchypi/ddrop/pkg/mathx"
 )
 
@@ -333,5 +336,138 @@ func TestMonitorAveragePrecice(t *testing.T) {
 	}
 	if r.AvgScore != 0.25 {
 		t.Fatal("unexpected AvgScore field val:", r.AvgScore)
+	}
+}
+
+func TestMonitorRegister(t *testing.T) {
+	type enqResultDuo struct {
+		raw KNNEnqueueResult // Normal
+		mon KNNEnqueueResult // Returned from monitor.register
+	}
+
+	// Amount of (concurrent-ish) requests. Should be fairly high since
+	// some of the test checks are probability based.
+	n := 10_000
+	// Measurement of time, expecially in knnMonitor.minChainlLinkSize
+	d := time.Second
+
+	testRuntime := d * 10
+	testStarted := time.Now()
+	testEnds := testStarted.Add(testRuntime)
+
+	// KNNMonItemAvg.AverageScore should be somewhere in between.
+	minScore := 0.4
+	maxScore := 0.6
+
+	// What is expected in a 'query'. Actual n 'results' will always be 1.
+	// KNNMonItem.AvgSatisfaction should be approx min/(max+1).
+	minK := 1
+	maxK := 5
+
+	startedNGoroutines := runtime.NumGoroutine()
+
+	monitor := knnMonitor{averages: &timedLinkedList[KNNMonItemAvg]{
+		maxChainLinkN:    int(testRuntime / d),
+		minChainLinkSize: d,
+	}}
+	// Note; using channels here becase of their lazy nature.
+
+	// Simulate hotspot for request creation, such as Handle.KNN.
+	enqueueResultsDuo := make(chan enqResultDuo)
+	go func() {
+		defer close(enqueueResultsDuo)
+		for i := 0; i < n; i++ {
+			enqRNew := KNNEnqueueResult{
+				Pipe:   make(chan knnc.ScoreItems, 1),
+				Cancel: knnc.NewCancelSignal(),
+			}
+			enqueueResultsDuo <- enqResultDuo{
+				raw: enqRNew,
+				mon: monitor.register(knnMonitorRegisterArgs{
+					knnEnqueueResult: enqRNew,
+					k:                rand.Intn(maxK-minK) + maxK,
+					ttl:              testEnds.Sub(testStarted),
+				}),
+			}
+		}
+	}()
+
+	// Simulate request processing.
+	wg := sync.WaitGroup{}
+	wg.Add(n)
+	for enqRDuo := range enqueueResultsDuo {
+		go func(enqRDuo enqResultDuo) {
+			defer wg.Done()
+			// Make all goroutines end at somewhere between now and testEnds.
+			// Also guard non-positive integers in rand.Int63n, it'll be angry.
+			testRemainder := testEnds.Sub(time.Now())
+			if testRemainder > 0 {
+				time.Sleep(time.Duration(rand.Int63n(int64(testRemainder))))
+			}
+
+			// Request done and sent.
+			enqRDuo.raw.Pipe <- knnc.ScoreItems{
+				{Set: true, Score: rand.Float64()*(maxScore-minScore) + minScore},
+			}
+			// Request received.
+			<-enqRDuo.mon.Pipe
+			close(enqRDuo.raw.Pipe)
+		}(enqRDuo)
+	}
+
+	wg.Wait()
+	// Make sure the whole linked list is filled.
+	if monitor.averages.inner.len() != int(testRuntime/d) {
+		t.Log("unexpected ll len:", monitor.averages.inner.len())
+	}
+
+	// Simple check; make sure that all entries are accounted for.
+	r := monitor.average(testStarted, testStarted.Add(-testRuntime))
+	if r.N != n {
+		s := "some entries were unaccounted for. want %v, have %v"
+		t.Fatalf(s, n, r.N)
+	}
+
+	// Complicated checks; get a portion of the timedLinkedList entries.
+	// It is a bit non-deterministic, so using ranges for these checks.
+	sampleSize := 0.5
+	durationSpan := time.Duration(float64(testRuntime) * sampleSize)
+	r = monitor.average(testStarted, testStarted.Add(-durationSpan))
+
+	// Check number of entries for period.
+	margin := 0.2
+	targetN := int(float64(n) * sampleSize)
+	targetNLower := int(float64(targetN) * (1 - margin))
+	targetNUpper := int(float64(targetN) * (1 + margin))
+	if r.N < targetNLower || r.N > targetNUpper {
+		s := "KNNMonItemAvg.N is out of expected bounds; "
+		s += "want min %v max %v, have %v. "
+		s += "Might want to re-run test, as this is probability based."
+		t.Fatalf(s, targetNLower, targetNUpper, r.N)
+	}
+
+	// Check score for period.
+	if r.AvgScore < minScore || r.AvgScore > maxScore {
+		s := "KNNMonItemAvg.AvgScore is out of expected bounds; "
+		s += "want min %v max %v, have %v"
+		t.Fatalf(s, minScore, maxScore, r.AvgScore)
+	}
+
+	// Check satisfaction for period.
+	targetSat := float64(minK) / float64(maxK+1)
+	targetSatLower := targetSat * (1 - margin)
+	targetSatUpper := targetSat * (1 + margin)
+	if r.AvgSatisfaction < targetSatLower || r.AvgSatisfaction > targetSatUpper {
+		s := "KNNMonItemAvg.AvgSatisfaction is out of expected bounds; "
+		s += "want min %v max %v, have %v"
+		t.Fatalf(s, targetSatLower, targetSatUpper, r.AvgSatisfaction)
+	}
+
+	// Check leaks.
+	runtime.GC()
+	if runtime.NumGoroutine() > startedNGoroutines {
+		s := "n goroutines is higher now than at the start of test;"
+		s += "had %v, have %v. There may be a leak."
+		t.Fatalf(s, startedNGoroutines, runtime.NumGoroutine())
 	}
 }

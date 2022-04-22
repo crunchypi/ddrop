@@ -1,9 +1,12 @@
 package requestman
 
 import (
+	"context"
 	"math"
 	"sync"
 	"time"
+
+	"github.com/crunchypi/ddrop/pkg/knnc"
 )
 
 /*
@@ -177,7 +180,7 @@ func (tll *timedLinkedList[T]) timeRange(start, end time.Time) []timed[T] {
 	}
 	result := make([]timed[T], 0, resultMaxN)
 
-	tll.inner.trim(func(i int, item *linkedListItem[timed[T]]) bool {
+	tll.inner.iter(func(i int, item *linkedListItem[timed[T]]) bool {
 		include := true
 		include = include && (i+1) <= resultMaxN
 		include = include && start.Sub(item.payload.created) < d
@@ -350,4 +353,84 @@ func (m *knnMonitor) average(start, end time.Time) KNNMonItemAvg {
 
 	m.averages.maintain()
 	return result
+}
+
+// knnMonitorRegisterArgs is intended as args for knnMonitor.register(...).
+type knnMonitorRegisterArgs struct {
+	knnEnqueueResult KNNEnqueueResult // What to listen for.
+	k                int              // Number of excepted KNN request results.
+	ttl              time.Duration    // Listen deadline (mitigate leaks).
+}
+
+// register puts a monitoring listener on items sent through
+// args.knnEnqueueResult.Pipe and the returned KNNEnqueueResult.Pipe.
+// Intended setup:
+// - User makes a knn request.
+// - A instance of KNNEnqueueResult is made, by default it goes to both the
+//   requester and the internal request processing (latter sends results to
+//   the former).
+// - Put that KNNEnqueueResult (A) here, another (B) is returned.
+// - Internal request processing gets A, requester gets B.
+//
+// Note; thread safe.
+func (m *knnMonitor) register(args knnMonitorRegisterArgs) KNNEnqueueResult {
+	out := KNNEnqueueResult{
+		Pipe:   make(chan knnc.ScoreItems, cap(args.knnEnqueueResult.Pipe)),
+		Cancel: args.knnEnqueueResult.Cancel,
+	}
+
+	// Leak prevention.
+	ctx, ctxCancel := context.WithDeadline(
+		context.Background(),
+		time.Now().Add(args.ttl*10),
+	)
+
+	go func() {
+		defer close(out.Pipe)
+		defer ctxCancel()
+
+		stamp := time.Now()
+		// Rcv safely with timeout.
+		safeChanIter(safeChanIterArgs[knnc.ScoreItems]{
+			ch:  args.knnEnqueueResult.Pipe,
+			ctx: ctx,
+			rcv: func(scoreItems knnc.ScoreItems) bool {
+				// Send (safely with timeout) result on all exit paths.
+				defer safeChanSend(safeChanSendArgs[knnc.ScoreItems]{
+					ch:  out.Pipe,
+					ctx: ctx,
+					elm: scoreItems,
+				})
+				// Update stamp on all exit paths.
+				defer func() {
+					stamp = time.Now()
+				}()
+
+				delta := time.Now().Sub(stamp)
+				scoreItems = scoreItems.Trim()
+
+				// Guard zero div.
+				if len(scoreItems) == 0 {
+					m.registerMonItem(knnMonItem{Latency: delta})
+					return true
+				}
+
+				// Total -> average.
+				totalScore := 0.
+				for _, scoreItem := range scoreItems {
+					totalScore += scoreItem.Score
+				}
+
+				m.registerMonItem(knnMonItem{
+					Latency:      delta,
+					AvgScore:     totalScore / float64(len(scoreItems)),
+					Satisfaction: float64(len(scoreItems)) / float64(args.k),
+				})
+
+				return true
+			},
+		})
+	}()
+
+	return out
 }
