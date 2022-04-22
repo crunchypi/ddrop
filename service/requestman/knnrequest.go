@@ -80,6 +80,9 @@ type KNNArgs struct {
 	// is a good idea to cancel it manually. After this duration, the
 	// best-found results are given. Must be > 0.
 	TTL time.Duration
+
+	// Monitor true will register the KNN request (and results).
+	Monitor bool
 }
 
 // Ok checks if KNNArgs meets the minimum configuration requirement.

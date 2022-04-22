@@ -43,6 +43,10 @@ type Handle struct {
 	// the maintanence loop for each namespaced (KNN) search space (for more
 	// info about this, see docs for T SearchSpaces of pkg/knnc).
 	ctx context.Context
+
+	// monitor keeps metadata about processed KNN requests, such as average
+	// accuracy, latency, satisfaction, etc.
+	monitor *knnMonitor
 }
 
 // NewHandleArgs is intended as args for func NewHandle.
@@ -68,6 +72,11 @@ type NewHandleArgs struct {
 	// the maintanence loop for each namespaced (KNN) search space (for more
 	// info about this, see docs for T SearchSpaces of pkg/knnc).
 	Ctx context.Context
+
+	// NewKNNMonitorArgs keeps instructions for how to make a new monitor.
+	// This includes same args as timex.NewLatencyArgs, as the internal
+	// data structure works the same way.
+	NewKNNMonitorArgs timex.NewLatencyTrackerArgs
 }
 
 // Ok returns true if the configuration kn NewHandleArgs is acceptable.
@@ -77,6 +86,7 @@ type NewHandleArgs struct {
 // - NewHandleArgs.KNNQueueBuf >= 0
 // - NewHandleArgs.KNNQueueMaxConcurrent > 0
 // - NewHandleArgs.Ctx != nil
+// - NewKNNMonitorArgs.Ok == true
 func (args *NewHandleArgs) Ok() bool {
 	ok := true
 	ok = ok && args.NewSearchSpaceArgs.Ok()
@@ -84,6 +94,7 @@ func (args *NewHandleArgs) Ok() bool {
 	ok = ok && args.KNNQueueBuf >= 0
 	ok = ok && args.KNNQueueMaxConcurrent > 0
 	ok = ok && args.Ctx != nil
+	ok = ok && args.NewKNNMonitorArgs.Ok()
 	return ok
 }
 
@@ -108,6 +119,12 @@ func NewHandle(args NewHandleArgs) (*Handle, bool) {
 			ctx:           args.Ctx,
 		},
 		ctx: args.Ctx,
+		monitor: &knnMonitor{
+			averages: &timedLinkedList[KNNMonItemAvg]{
+				maxChainLinkN:    args.NewKNNMonitorArgs.MaxChainLinkN,
+				minChainLinkSize: args.NewKNNMonitorArgs.MinChainLinkSize,
+			},
+		},
 	}
 
 	go h.knnQueue.startProcessing()
@@ -184,6 +201,15 @@ func (h *Handle) KNN(args KNNArgs) (KNNEnqueueResult, bool) {
 
 	request := newKNNRequest(&args)
 	h.knnQueue.queue <- knnQueueItem{nsItem: nsItem, request: request}
+	// Optional listen to result.
+	if args.Monitor {
+		enqueueResult := h.monitor.register(knnMonitorRegisterArgs{
+			knnEnqueueResult: request.enqueueResult,
+			k:                args.K,
+			ttl:              args.TTL,
+		})
+		return enqueueResult, true
+	}
 	return request.enqueueResult, true
 }
 
@@ -204,8 +230,8 @@ type info struct {
 // Single-use is encouraged to prevent leaks, as the returned "info" instance
 // contains a ptr to the Handle instance. So call h.Info().Xyz() directly,
 // instead of something like "x := h.Info()".
-func (h *Handle) Info() info {
-	return info{h}
+func (h *Handle) Info() *info {
+	return &info{h}
 }
 
 // SSpaceNamespaces returns all search space namespaces.
@@ -272,4 +298,17 @@ func (i *info) KNNQueryLatency(k string, d time.Duration) (time.Duration, bool) 
 		return 0, false
 	}
 	return ns.latency.Average(d)
+}
+
+// KNNMonitor returns knn monitoring data for the given period. Note that
+// 'start' should be _after_ 'end', which might be counter-intuitive.
+// So to get data created the last minute:
+//
+//  now := time.Now()
+//  x.KNNMonitor(now, now.Add(-time.Minute))
+//
+// The reason for this is that 'start' and 'end' is relative to the internal
+// linked list where 'head' and 'tail' is in reverse chronological order.
+func (i *info) KNNMonitor(start, end time.Time) KNNMonItemAvg {
+    return i.h.monitor.average(start, end)
 }

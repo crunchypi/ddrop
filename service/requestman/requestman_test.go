@@ -3,6 +3,7 @@ package requestman
 import (
 	"context"
 	"math/rand"
+	"runtime"
 	"testing"
 	"time"
 
@@ -19,7 +20,11 @@ func init() {
 // args:
 // - sSpaceMaxN is used for SearchSpacesMaxCap and SearchSpaceMaxN.
 // - knnQueueN is used for knnQueue.queue buf and MaxConcurrent.
-func newTestHandle(sSpaceMaxN, knnQueueN int) *Handle {
+// - ctx is used as context for the handle. Accepts nil.
+func newTestHandle(sSpaceMaxN, knnQueueN int, ctx context.Context) *Handle {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	h, ok := NewHandle(NewHandleArgs{
 		NewSearchSpaceArgs: knnc.NewSearchSpacesArgs{
 			SearchSpacesMaxCap:      sSpaceMaxN,
@@ -33,7 +38,11 @@ func newTestHandle(sSpaceMaxN, knnQueueN int) *Handle {
 		},
 		KNNQueueBuf:           knnQueueN,
 		KNNQueueMaxConcurrent: knnQueueN,
-		Ctx:                   context.Background(),
+		Ctx:                   ctx,
+		NewKNNMonitorArgs: timex.NewLatencyTrackerArgs{
+			MaxChainLinkN:    1,
+			MinChainLinkSize: time.Second,
+		},
 	})
 
 	if !ok {
@@ -74,7 +83,7 @@ func newTestKNNArgs(dim int, ns string) KNNArgs {
 func TestHandleAddData(t *testing.T) {
 	ns := "test"
 	dc := DistancerContainer{D: mathx.NewSafeVec(9)}
-	h := newTestHandle(100, 100)
+	h := newTestHandle(100, 100, nil)
 
 	if ok := h.AddData(ns, dc, []byte{}); !ok {
 		t.Fatal("got not-ok when adding data")
@@ -104,7 +113,10 @@ func TestHandleKNN(t *testing.T) {
 	nData := 100_000
 	maxConcurrent := 100
 
-	h := newTestHandle(nData, maxConcurrent)
+	ctx, ctxCancel := context.WithCancel(context.Background())
+	h := newTestHandle(nData, maxConcurrent, ctx)
+
+	nGoroutines := runtime.NumGoroutine()
 
 	// Add some data.
 	for i := 0; i < nData; i++ {
@@ -145,5 +157,14 @@ func TestHandleKNN(t *testing.T) {
 		if len(r.Trim()) == 0 {
 			t.Fatal("one KNN request got 0 result items.")
 		}
+	}
+
+	ctxCancel()
+	// Check leaks.
+	runtime.GC()
+	if nGoroutines != runtime.NumGoroutine() {
+		s := "number of goroutines at the end of this test is not the"
+		s += " same as at the start; possible leak. Want %v, have %v."
+		t.Fatalf(s, nGoroutines, runtime.NumGoroutine())
 	}
 }
