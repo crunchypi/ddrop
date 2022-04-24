@@ -42,7 +42,7 @@ func TestSingleAddData(t *testing.T) {
 
 		vec, _ := randFloat64Slice(dim)
 		payload := []AddDataArgs{
-			{namespace, vec, []byte{}},
+            {Namespace:namespace, Vec:vec, Data:[]byte{}},
 		}
 
 		r := NewClient(addr).AddData(payload)

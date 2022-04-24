@@ -78,6 +78,7 @@ func randFloat64Slice(dim int) ([]float64, bool) {
 // - Accept   : rand range [0.9, 1.0].
 // - Reject   : rand range [0.5, 0.9].
 // - TTL      : rand range [10ms, 100ms].
+// - Monitor  : true,
 //
 // NOTE: will panic if the returned KNNArgs.Ok() == false. This will happen if
 // the given dim <= 0, or if this func is implemented incorrectly.
@@ -98,6 +99,7 @@ func randKNNArgs(namespace string, dim int) rman.KNNArgs {
 		Accept:    rand.Float64()*(1.0-0.9) + 0.9,
 		Reject:    rand.Float64()*(0.9-0.5) + 0.5,
 		TTL:       time.Duration(ttl),
+		Monitor:   true,
 	}
 
 	if !knnArgs.Ok() {
@@ -231,6 +233,21 @@ func (w *requestManagerHandleWrap) fill(n int) {
 			panic("could not add new data")
 		}
 	}
+}
+
+// makeLatency makes 'n' random KNN requests with the inner requestman.Handle instance,
+// with 'interval' pauses in between.
+func (w *requestManagerHandleWrap) makeLatency(n int, interval time.Duration) error {
+	for i := 0; i < n; i++ {
+		time.Sleep(interval)
+		args := w.rManMeta.randKNNArgs()
+		enqueueResult, ok := w.handle.KNN(args)
+		if !ok {
+			return errors.New("could not make a knn request")
+		}
+		<-enqueueResult.Pipe
+	}
+	return nil
 }
 
 /*

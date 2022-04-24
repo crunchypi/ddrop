@@ -82,6 +82,7 @@ type AddDataArgs struct {
 	Namespace string
 	Vec       []float64
 	Data      []byte
+	Expires   time.Time
 }
 
 // AddData tries to add data to the remote server.
@@ -142,4 +143,10 @@ func (c *Client) KNNEager(args rman.KNNArgs) *ClientResult[KNNResp] {
 		Payload:        resp.Payload,
 		NetworkLatency: resp.RecvTime.Sub(send.SendTime),
 	}
+}
+
+// Info returns a method namespace. Similar to requestman.Handle.Info()
+func (c *Client) Info() *CInfo {
+	ci := CInfo(*c)
+	return &ci
 }

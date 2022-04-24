@@ -37,6 +37,12 @@ func (s *Server) StartListen() (stop func(), err error) {
 		return nil, err
 	}
 
+	// Also register namespaced server info.
+	sinfo := SInfo(*s)
+	if err := handler.Register(&sinfo); err != nil {
+		return nil, err
+	}
+
 	ln, err := net.Listen("tcp", s.LocalAddr)
 	if err != nil {
 		return nil, err
@@ -115,11 +121,12 @@ func (s *Server) AddData(args SArgs[[]AddDataArgs], resp *SResp[[]bool]) error {
 
 	// Try add.
 	for i, addDataArgs := range args.Payload {
-		vec := mathx.NewSafeVec(addDataArgs.Vec...)
-		dc := rman.DistancerContainer{D: vec}
 		resp.Payload[i] = s.rManHandle.AddData(
 			addDataArgs.Namespace,
-			dc,
+			rman.DistancerContainer{
+				D:       mathx.NewSafeVec(addDataArgs.Vec...),
+				Expires: addDataArgs.Expires,
+			},
 			addDataArgs.Data,
 		)
 	}
