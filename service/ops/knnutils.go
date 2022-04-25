@@ -48,3 +48,34 @@ func KNNRespItemsFromScoreItems(scoreItems knnc.ScoreItems) []KNNRespItem {
 
 	return r
 }
+
+// sortItem is intended to be used as an item that can be ordered.
+// Originally intended for bubbleInsert(...).
+type sortItem[T any] struct {
+	score float64
+	set   bool
+	data  T
+}
+
+// bubbleInsert simply does a bubble insert operation of the "insertee" into the
+// given slice "s", based on sortItem.score. The "ascending" bool specifies if
+// it's bubble up or bubble down. This func assumes that all elements in the
+// slice are already ordered in the same manner as specifies with "ascending".
+// Do note that sortItem.set = false will be ignored.
+func bubbleInsert[T any](s []sortItem[T], insertee sortItem[T], ascending bool) {
+	for i := 0; i < len(s); i++ {
+		// Either the caller tried to insert an item that is not set,
+		// or 'i' > 0 and a swap happened which replaced an unset item.
+		// In any case, insertee does not belong anywhere anymore.
+		if !insertee.set {
+			return
+		}
+
+		condA := !s[i].set
+		condB := insertee.score < s[i].score && ascending
+		condC := insertee.score > s[i].score && !ascending
+		if condA || condB || condC {
+			insertee, s[i] = s[i], insertee
+		}
+	}
+}

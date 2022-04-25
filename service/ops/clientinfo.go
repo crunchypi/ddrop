@@ -193,7 +193,7 @@ func (ci *CInfo) KNNLatency(args KNNLatencyArgs) *ClientResult[KNNLatencyResp] {
 // - Start: time.Now()
 // - End  : time.Now().Add(-time.Minute)
 type KNNMonArgs struct {
-	// Start of record. 
+	// Start of record.
 	Start time.Time
 	// End of record, how far to go back in time relative to "Start".
 	End time.Time

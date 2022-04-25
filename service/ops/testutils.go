@@ -283,3 +283,75 @@ func withServer(addr string, rcv func(w *requestManagerHandleWrap)) error {
 
 	return nil
 }
+
+// testNode is intended as a single node in the testNetwork.
+type testNode struct {
+	addr string
+	*serverWrap
+	stopFunc func() // stopFunc is used to shut down the server.
+}
+
+// testNetwork is used to simulate an rpc network as defined in this pkg.
+type testNetwork struct {
+	nodes map[string]*testNode // key is addr.
+	addrs []string             // convenience collection of addrs.
+}
+
+// newTestNetwork sets up a new test network with the given addrs.
+// Each node is set up using newRequestManagerWrap(), see docs for that
+// for more info about all the different configurations.
+func newTestNetwork(addrs []string) (*testNetwork, error) {
+	tNetwork := testNetwork{
+		nodes: make(map[string]*testNode),
+		addrs: addrs,
+	}
+	for _, addr := range addrs {
+		rManWrap := newRequestManagerWrap()
+		s, ok := NewServer(addr, rManWrap.handle)
+		if !ok {
+			return nil, errors.New("could not setup a new Server instance")
+		}
+		stop, err := s.StartListen()
+		if err != nil {
+			return nil, err
+		}
+
+		tNetwork.nodes[addr] = &(testNode{
+			addr: addr,
+			serverWrap: &serverWrap{
+				server:   s,
+				rManWrap: rManWrap,
+			},
+			stopFunc: stop,
+		})
+	}
+
+	return &tNetwork, nil
+}
+
+// stop calls the stopFunc on all internal testNode instances, i.e shuts down
+// all the Server instances.
+func (tn *testNetwork) stop() {
+	for _, node := range tn.nodes {
+		node.stopFunc()
+	}
+}
+
+// withNetwork is similar as withServer(...), the maing difference being that
+// this function lends an entire testNetwork, as opposed to a single server.
+// This is meant to reduce setup- and shutdown boilerplate.
+func withNetwork(t *testing.T, numNodes int, rcv func(n *testNetwork)) error {
+	addrs := make([]string, numNodes)
+	for i := 0; i < numNodes; i++ {
+		addrs[i] = freeLocalNoFail(t)
+	}
+
+	tNetwork, err := newTestNetwork(addrs)
+	if err != nil {
+		return err
+	}
+	defer tNetwork.stop()
+
+	rcv(tNetwork)
+	return nil
+}

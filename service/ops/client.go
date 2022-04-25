@@ -17,10 +17,10 @@ type Client struct {
 }
 
 // NewClient sets up a new client. If a timeout isn't specified, or has a
-// time.Duration <= 0, then the timeout will be set to a second as default.
+// time.Duration <= 0, then the timeout will be set to 3 seconds as default.
 func NewClient(remoteAddr string, timeout ...time.Duration) *Client {
 	if len(timeout) == 0 || timeout[0] <= time.Duration(0) {
-		return &Client{RemoteAddr: remoteAddr, Timeout: time.Second}
+		return &Client{RemoteAddr: remoteAddr, Timeout: time.Second * 3}
 	}
 	return &Client{RemoteAddr: remoteAddr, Timeout: timeout[0]}
 }
