@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"context"
 	"net"
 	"net/rpc"
 	"time"
@@ -11,21 +12,39 @@ import (
 
 // Server is an rpc server on top of requestman.Handle.
 type Server struct {
-	LocalAddr  string
-	rManHandle *rman.Handle
+	LocalAddr      string
+	rManHandle     *rman.Handle
+	rManHandleStop func()
 }
 
-// NewServer is a factory function. Will return false if 'rManHandle' is nil.
-func NewServer(localAddr string, rManHandle *rman.Handle) (*Server, bool) {
-	if rManHandle == nil {
+// NewServer is a factory function. Will return (nil, false) is a new
+// requestman.Handle could not be created with the given rManHandleArgs.
+func NewServer(localAddr string, rManHandleArgs rman.NewHandleArgs) (*Server, bool) {
+	// Guard for chaining ctx.
+	if rManHandleArgs.Ctx == nil {
 		return nil, false
 	}
-	return &Server{LocalAddr: localAddr, rManHandle: rManHandle}, true
+	ctx, ctxStop := context.WithCancel(rManHandleArgs.Ctx)
+	rManHandleArgs.Ctx = ctx
+
+	rManHandle, ok := rman.NewHandle(rManHandleArgs)
+	if !ok {
+        ctxStop()
+		return nil, false
+	}
+
+	s := Server{
+		LocalAddr:      localAddr,
+		rManHandle:     rManHandle,
+		rManHandleStop: ctxStop,
+	}
+
+	return &s, true
 }
 
 // StartListen spins up the server and makes it active. The returned func
-// is used for stopping, while the error indicates the following:
-// (These are for the setup)
+// is used for stopping (this also stops the internal requestman.Handle),
+// while the error indicates the following (These are for the setup):
 // - rpc.NewServer().Register(this) returns an err.
 // - net.Listen("tcp", this.LocalAddr) returns an err.
 //
@@ -53,6 +72,9 @@ func (s *Server) StartListen() (stop func(), err error) {
 		ln.Close()
 		if conn != nil {
 			conn.Close()
+		}
+		if s.rManHandleStop != nil {
+			s.rManHandleStop()
 		}
 	}
 

@@ -16,7 +16,7 @@ Tests are prefixed with TestSingleX because there is also composite operations.
 func TestSinglePing(t *testing.T) {
 	addr := freeLocalNoFail(t)
 
-	err := withServer(addr, func(_ *requestManagerHandleWrap) {
+	err := withTestNode(addr, func(_ *testNode) {
 		r := NewClient(addr).Ping()
 		if r.NetErr != nil {
 			t.Fatal(r)
@@ -34,11 +34,11 @@ func TestSinglePing(t *testing.T) {
 func TestSingleAddData(t *testing.T) {
 	addr := freeLocalNoFail(t)
 
-	err := withServer(addr, func(rManWrap *requestManagerHandleWrap) {
+	err := withTestNode(addr, func(testNode *testNode) {
 		// Abbreviations for convenience.
-		namespace := rManWrap.rManMeta.namespace
-		dim := rManWrap.rManMeta.poolVecDim
-		rm := rManWrap.handle
+		namespace := testNode.rManMeta.namespace
+		dim := testNode.rManMeta.poolVecDim
+		rm := testNode.server.rManHandle
 
 		vec, _ := randFloat64Slice(dim)
 		payload := []AddDataArgs{
@@ -69,11 +69,11 @@ func TestSingleAddData(t *testing.T) {
 func TestSingleKNNEager(t *testing.T) {
 	addr := freeLocalNoFail(t)
 
-	err := withServer(addr, func(rManWrap *requestManagerHandleWrap) {
+	err := withTestNode(addr, func(testNode *testNode) {
 		// Need some data to query.
-		rManWrap.fill(10_000)
+		testNode.fill(10_000)
 
-		args := rManWrap.rManMeta.randKNNArgs()
+		args := testNode.rManMeta.randKNNArgs()
 		args.K++             // At least one.
 		args.TTL = time.Hour // Mitigate timeout.
 

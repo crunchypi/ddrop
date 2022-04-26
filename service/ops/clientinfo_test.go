@@ -16,7 +16,7 @@ Tests are prefixed with TestSingleX because there is also composite operations.
 func TestSingleInfoSSpaceNamespaces(t *testing.T) {
 	addr := freeLocalNoFail(t)
 
-	err := withServer(addr, func(rWrap *requestManagerHandleWrap) {
+	err := withTestNode(addr, func(testNode *testNode) {
 		// Before fill.
 		r := NewClient(addr).Info().SSpaceNamespaces()
 		if r.NetErr != nil {
@@ -27,7 +27,7 @@ func TestSingleInfoSSpaceNamespaces(t *testing.T) {
 		}
 
 		// After fill.
-		rWrap.fill(10)
+		testNode.fill(10)
 		r = NewClient(addr).Info().SSpaceNamespaces()
 		if r.NetErr != nil {
 			t.Fatal(r.NetErr)
@@ -45,8 +45,8 @@ func TestSingleInfoSSpaceNamespaces(t *testing.T) {
 func TestSingleInfoSSpaceNamespace(t *testing.T) {
 	addr := freeLocalNoFail(t)
 
-	err := withServer(addr, func(rWrap *requestManagerHandleWrap) {
-		ns := rWrap.rManMeta.namespace
+	err := withTestNode(addr, func(testNode *testNode) {
+		ns := testNode.rManMeta.namespace
 		// Before fill.
 		r := NewClient(addr).Info().SSpaceNamespace(ns)
 		if r.NetErr != nil {
@@ -57,7 +57,7 @@ func TestSingleInfoSSpaceNamespace(t *testing.T) {
 		}
 
 		// After fill.
-		rWrap.fill(10)
+		testNode.fill(10)
 		r = NewClient(addr).Info().SSpaceNamespace(ns)
 		if r.NetErr != nil {
 			t.Fatal(r.NetErr)
@@ -75,11 +75,11 @@ func TestSingleInfoSSpaceNamespace(t *testing.T) {
 func TestSingleInfoSSpaceDim(t *testing.T) {
 	addr := freeLocalNoFail(t)
 
-	err := withServer(addr, func(rWrap *requestManagerHandleWrap) {
-		ns := rWrap.rManMeta.namespace
-		dim := rWrap.rManMeta.poolVecDim
+	err := withTestNode(addr, func(testNode *testNode) {
+		ns := testNode.rManMeta.namespace
+		dim := testNode.rManMeta.poolVecDim
 
-		rWrap.fill(10)
+		testNode.fill(10)
 
 		r := NewClient(addr).Info().SSpaceDim(ns)
 		if r.NetErr != nil {
@@ -101,11 +101,11 @@ func TestSingleInfoSSpaceDim(t *testing.T) {
 func TestSingleInfoSSpaceLen(t *testing.T) {
 	addr := freeLocalNoFail(t)
 
-	err := withServer(addr, func(rWrap *requestManagerHandleWrap) {
-		ns := rWrap.rManMeta.namespace
+	err := withTestNode(addr, func(testNode *testNode) {
+		ns := testNode.rManMeta.namespace
 
 		n := 9
-		rWrap.fill(n)
+		testNode.fill(n)
 
 		r := NewClient(addr).Info().SSpaceLen(ns)
 		if r.NetErr != nil {
@@ -127,11 +127,12 @@ func TestSingleInfoSSpaceLen(t *testing.T) {
 func TestSingleInfoSSpaceCap(t *testing.T) {
 	addr := freeLocalNoFail(t)
 
-	err := withServer(addr, func(rWrap *requestManagerHandleWrap) {
-		ns := rWrap.rManMeta.namespace
+	err := withTestNode(addr, func(testNode *testNode) {
+		ns := testNode.rManMeta.namespace
+		rManHandle := testNode.server.rManHandle
 
-		rWrap.fill(9)
-		capacity, _ := rWrap.handle.Info().SSpaceCap(ns)
+		testNode.fill(9)
+		capacity, _ := rManHandle.Info().SSpaceCap(ns)
 
 		r := NewClient(addr).Info().SSpaceCap(ns)
 		if r.NetErr != nil {
@@ -154,14 +155,15 @@ func TestSingleInfoSSpaceCap(t *testing.T) {
 func TestSingleInfoKNNLatency(t *testing.T) {
 	addr := freeLocalNoFail(t)
 
-	err := withServer(addr, func(rWrap *requestManagerHandleWrap) {
-		ns := rWrap.rManMeta.namespace
+	err := withTestNode(addr, func(testNode *testNode) {
+		ns := testNode.rManMeta.namespace
+		rManHandle := testNode.server.rManHandle
 
-		rWrap.fill(10_000)
-		rWrap.makeLatency(10, time.Millisecond*10)
+		testNode.fill(10_000)
+		testNode.makeLatency(10, time.Millisecond*10)
 
-		lQueue, _ := rWrap.handle.Info().KNNQueueLatency(time.Minute)
-		lQuery, _ := rWrap.handle.Info().KNNQueryLatency(ns, time.Minute)
+		lQueue, _ := rManHandle.Info().KNNQueueLatency(time.Minute)
+		lQuery, _ := rManHandle.Info().KNNQueryLatency(ns, time.Minute)
 		expectTotal := lQueue + lQuery
 
 		// Full minute go get the complete range.
@@ -190,10 +192,10 @@ func TestSingleInfoKNNLatency(t *testing.T) {
 func TestSingleInfoKNNMonitor(t *testing.T) {
 	addr := freeLocalNoFail(t)
 
-	err := withServer(addr, func(rWrap *requestManagerHandleWrap) {
+	err := withTestNode(addr, func(testNode *testNode) {
 
-		rWrap.fill(10_000)
-		rWrap.makeLatency(100, time.Millisecond*10)
+		testNode.fill(10_000)
+		testNode.makeLatency(100, time.Millisecond*10)
 
 		r := NewClient(addr).Info().KNNMonitor(KNNMonArgs{
 			Start: time.Now(),

@@ -181,37 +181,56 @@ func newRequestManagerMeta() *requestMananagerMeta {
 	}
 }
 
-// requestManagerHandleWrap is a concenience type which wraps around a
-// requestmanager.Handle and the way it was set up (meta data). It is
-// also used for some convenience methods.
-type requestManagerHandleWrap struct {
-	handle   *rman.Handle
+/*
+--------------------------------------------------------------------------------
+Utils for consistent setup of Server which is intended to be used for testing.
+This is in the form of a test node and test network.
+--------------------------------------------------------------------------------
+*/
+
+//testNode is a container of a Server and some associated values (like how the
+// internal requestman.Handle is set up) and helper methods. It is also intended
+// as a single node in the testNetwork T.
+type testNode struct {
+	addr     string
+	server   *Server
 	rManMeta *requestMananagerMeta
+	stopFunc func() // stopFunc is used to shut down the server.
 }
 
-// newRequestManagerWrap is a factory func. It uses newRequestManagerMeta()
-// (in this pkg/file) as instructions. See docs for that func for more info.
-// Note, requestManager.NewHandleArgs.Ctx is set as context.Background().
-// Additionally, will panic if a new handle could not be set up, as that is
-// purely an implementation error here.
-func newRequestManagerWrap() *requestManagerHandleWrap {
+// newTestNode is a factory func for T testNode. Its internal requestman.Handle
+// is set up using newRequestManagerMeta(), see docs for that for more info.
+func newTestNode(addr string) (*testNode, error) {
 	rManMeta := newRequestManagerMeta()
-	handle, ok := rman.NewHandle(rman.NewHandleArgs{
+	handleArgs := rman.NewHandleArgs{
 		NewSearchSpaceArgs:    rManMeta.newSearchSpaceArgs,
 		NewLatencyTrackerArgs: rManMeta.newLatencyTrackerArgs,
 		KNNQueueBuf:           rManMeta.knnQueueBuf,
 		KNNQueueMaxConcurrent: rManMeta.knnQueueMaxConcurrent,
 		Ctx:                   context.Background(),
 		NewKNNMonitorArgs:     rManMeta.newKNNMonitorArgs,
-	})
+	}
 
+	s, ok := NewServer(addr, handleArgs)
 	if !ok {
-		panic("test setup failed")
+		s := "testNode setup failed, invalid requestman.Handle cfg"
+		return nil, errors.New(s)
 	}
-	return &requestManagerHandleWrap{
-		handle:   handle,
+
+	stopFunc, err := s.StartListen()
+	if err != nil {
+		s := "could not start server:"
+		return nil, errors.New(fmt.Sprintln(s, err))
+	}
+
+	tn := testNode{
+		addr:     addr,
+		server:   s,
 		rManMeta: rManMeta,
+		stopFunc: stopFunc,
 	}
+
+	return &tn, nil
 }
 
 // fill is a convenience method for filling the internal requestmanager.Handle
@@ -221,14 +240,15 @@ func newRequestManagerWrap() *requestManagerHandleWrap {
 // by two cases:
 // 1) the aforementioned poolVecDim is <= 0, so a rand vec is impossible.
 // 2) handle.AddData returns false (see doc for that, could be over-capacity).
-func (w *requestManagerHandleWrap) fill(n int) {
+func (tn *testNode) fill(n int) {
 	for i := 0; i < n; i++ {
-		vec, ok := mathx.NewSafeVecRand(w.rManMeta.poolVecDim)
+		vec, ok := mathx.NewSafeVecRand(tn.rManMeta.poolVecDim)
 		if !ok {
 			panic("couldn't create a new random vec")
 		}
+		ns := tn.rManMeta.namespace
 		dc := rman.DistancerContainer{D: vec}
-		ok = w.handle.AddData(w.rManMeta.namespace, dc, []byte{})
+		ok = tn.server.rManHandle.AddData(ns, dc, []byte{})
 		if !ok {
 			panic("could not add new data")
 		}
@@ -237,11 +257,11 @@ func (w *requestManagerHandleWrap) fill(n int) {
 
 // makeLatency makes 'n' random KNN requests with the inner requestman.Handle instance,
 // with 'interval' pauses in between.
-func (w *requestManagerHandleWrap) makeLatency(n int, interval time.Duration) error {
+func (tn *testNode) makeLatency(n int, interval time.Duration) error {
 	for i := 0; i < n; i++ {
 		time.Sleep(interval)
-		args := w.rManMeta.randKNNArgs()
-		enqueueResult, ok := w.handle.KNN(args)
+		args := tn.rManMeta.randKNNArgs()
+		enqueueResult, ok := tn.server.rManHandle.KNN(args)
 		if !ok {
 			return errors.New("could not make a knn request")
 		}
@@ -250,45 +270,18 @@ func (w *requestManagerHandleWrap) makeLatency(n int, interval time.Duration) er
 	return nil
 }
 
-/*
---------------------------------------------------------------------------------
-Utils for consistent setup of Server which is intended to be used for testing.
---------------------------------------------------------------------------------
-*/
-
-// serverWrap is a convenience wrapper around a Server instance and the
-// requestManagerHandleWrap which it was set up with.
-type serverWrap struct {
-	server   *Server
-	rManWrap *requestManagerHandleWrap
-}
-
-// withServer is a convenience for setting up and cleaning resources, which
+// withTestNode is a convenience for setting up and cleaning resources, which
 // is meant to reduce boilerplate in tests. It spins up a Server with the
-// given address (returns err on fail), then passes the
-// requestManagerHandleWrap that was used to create the aforementioned server
-// to the rcv func.
-func withServer(addr string, rcv func(w *requestManagerHandleWrap)) error {
-	w := newRequestManagerWrap()
-	s, ok := NewServer(addr, w.handle)
-	if !ok {
-		return errors.New("could not setup server")
-	}
-	stop, err := s.StartListen()
+// given address (returns err on fail).
+func withTestNode(addr string, rcv func(*testNode)) error {
+	tn, err := newTestNode(addr)
 	if err != nil {
-		return errors.New(fmt.Sprintf("could not setup server wrap: %v", err))
+		return err
 	}
-	defer stop()
-	rcv(w)
+	defer tn.stopFunc()
 
+	rcv(tn)
 	return nil
-}
-
-// testNode is intended as a single node in the testNetwork.
-type testNode struct {
-	addr string
-	*serverWrap
-	stopFunc func() // stopFunc is used to shut down the server.
 }
 
 // testNetwork is used to simulate an rpc network as defined in this pkg.
@@ -306,24 +299,12 @@ func newTestNetwork(addrs []string) (*testNetwork, error) {
 		addrs: addrs,
 	}
 	for _, addr := range addrs {
-		rManWrap := newRequestManagerWrap()
-		s, ok := NewServer(addr, rManWrap.handle)
-		if !ok {
-			return nil, errors.New("could not setup a new Server instance")
-		}
-		stop, err := s.StartListen()
+		tn, err := newTestNode(addr)
 		if err != nil {
 			return nil, err
 		}
 
-		tNetwork.nodes[addr] = &(testNode{
-			addr: addr,
-			serverWrap: &serverWrap{
-				server:   s,
-				rManWrap: rManWrap,
-			},
-			stopFunc: stop,
-		})
+		tNetwork.nodes[addr] = tn
 	}
 
 	return &tNetwork, nil

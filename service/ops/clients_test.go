@@ -39,8 +39,8 @@ func TestCompositeAddData(t *testing.T) {
 	err := withNetwork(t, 3, func(tn *testNetwork) {
 		// Use any node to get a valid namespace and dim.
 		node := tn.nodes[tn.addrs[0]]
-		ns := node.rManWrap.rManMeta.namespace
-		dim := node.rManWrap.rManMeta.poolVecDim
+		ns := node.rManMeta.namespace
+		dim := node.rManMeta.poolVecDim
 
 		vec, _ := randFloat64Slice(dim)
 		payload := []AddDataArgs{
@@ -81,7 +81,7 @@ func TestCompositeAddData(t *testing.T) {
 			s := "could not access nodes in test network with key %v."
 			t.Fatalf(s, recieveNodeAddr)
 		}
-		_, l, _ := node.rManWrap.handle.Info().SSpaceLen(ns)
+		_, l, _ := node.server.rManHandle.Info().SSpaceLen(ns)
 		if l != 1 {
 			t.Fatalf("unexpected vecpool len after data add. want 1, have %v", l)
 		}
@@ -95,12 +95,12 @@ func TestCompositeAddData(t *testing.T) {
 func TestCompositeKNNEagerx(t *testing.T) {
 	err := withNetwork(t, 5, func(tn *testNetwork) {
 		for _, node := range tn.nodes {
-			node.rManWrap.fill(1000)
+			node.fill(1000)
 		}
 		// Use any node to get a valid namespace and dim.
 		node := tn.nodes[tn.addrs[0]]
-		ns := node.rManWrap.rManMeta.namespace
-		dim := node.rManWrap.rManMeta.poolVecDim
+		ns := node.rManMeta.namespace
+		dim := node.rManMeta.poolVecDim
 
 		// Easy/fast spec knn args.
 		v, _ := randFloat64Slice(dim)
