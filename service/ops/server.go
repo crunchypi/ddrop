@@ -29,7 +29,7 @@ func NewServer(localAddr string, rManHandleArgs rman.NewHandleArgs) (*Server, bo
 
 	rManHandle, ok := rman.NewHandle(rManHandleArgs)
 	if !ok {
-        ctxStop()
+		ctxStop()
 		return nil, false
 	}
 

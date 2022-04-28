@@ -214,3 +214,9 @@ func (cs *Clients) KNNEagerx(args rman.KNNArgs) []*ClientResult[KNNRespItem] {
 
 	return r
 }
+
+// Info returns a method namespace. Similar to Client.Info()
+func (cs *Clients) Info() *CSInfo {
+	csi := CSInfo(*cs)
+	return &csi
+}

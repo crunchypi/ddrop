@@ -66,6 +66,27 @@ func randFloat64Slice(dim int) ([]float64, bool) {
 	return s, true
 }
 
+// countChan counts the chan eagerly. It also returns a new chan containing
+// all the elements of the previous one.
+func countChan[T any](in <-chan T) (<-chan T, int) {
+	// Eager extract.
+	s := make([]T, 0, 10) // 10 is arbitrary.
+	for item := range in {
+		s = append(s, item)
+	}
+
+	// Simulate the in chan.
+	out := make(chan T)
+	go func() {
+		defer close(out)
+		for _, item := range s {
+			out <- item
+		}
+	}()
+
+	return out, len(s)
+}
+
 // randKNNArgs returns (requestmanager.) KNNArgs with some random fields.
 // The fiels are set as follows:
 // - Namespace: namespace (given to this func).
