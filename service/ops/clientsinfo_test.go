@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestCompositeSSpaceNamespaces(t *testing.T) {
+func TestCompositeInfoSSpaceNamespaces(t *testing.T) {
 	n := 3
 	err := withNetwork(t, n, func(tn *testNetwork) {
 		// Create some data so there is a namespace.
@@ -17,6 +17,7 @@ func TestCompositeSSpaceNamespaces(t *testing.T) {
 		ns := tn.nodes[tn.addrs[0]].rManMeta.namespace
 		ch := NewClients(tn.addrs).Info().SSpaceNamespaces()
 
+		// Check amt. for results.
 		ch, nResults := countChan(ch)
 		if nResults != n {
 			t.Fatal("got an unexpected amt of results:", nResults)
@@ -42,7 +43,7 @@ func TestCompositeSSpaceNamespaces(t *testing.T) {
 	}
 }
 
-func TestCompositeSSpaceNamespace(t *testing.T) {
+func TestCompositeInfoSSpaceNamespace(t *testing.T) {
 	n := 3
 	err := withNetwork(t, n, func(tn *testNetwork) {
 		// Create some data so there is a namespace.
@@ -53,10 +54,13 @@ func TestCompositeSSpaceNamespace(t *testing.T) {
 		ns := tn.nodes[tn.addrs[0]].rManMeta.namespace
 		ch := NewClients(tn.addrs).Info().SSpaceNamespace(ns)
 
-		nResults := 0
-		for clientResult := range ch {
-			nResults++
+		// Check amt. for results.
+		ch, nResults := countChan(ch)
+		if nResults != n {
+			t.Fatal("got an unexpected amt of results:", nResults)
+		}
 
+		for clientResult := range ch {
 			if err := clientResult.NetErr; err != nil {
 				t.Fatal("one node got a network err:", err)
 			}
@@ -65,10 +69,6 @@ func TestCompositeSSpaceNamespace(t *testing.T) {
 				t.Fatal("one node got a not-ok namespace lookup")
 			}
 		}
-
-		if nResults != n {
-			t.Fatal("got an unexpected amt of results, nResults")
-		}
 	})
 
 	if err != nil {
@@ -76,7 +76,7 @@ func TestCompositeSSpaceNamespace(t *testing.T) {
 	}
 }
 
-func TestCompositeSSpaceDim(t *testing.T) {
+func TestCompositeInfoSSpaceDim(t *testing.T) {
 	n := 3
 	err := withNetwork(t, n, func(tn *testNetwork) {
 		// Create some data so there is a namespace.
@@ -88,12 +88,16 @@ func TestCompositeSSpaceDim(t *testing.T) {
 		node := tn.nodes[tn.addrs[0]]
 		dim := node.rManMeta.poolVecDim
 		ns := node.rManMeta.namespace
+
 		ch := NewClients(tn.addrs).Info().SSpaceDim(ns)
 
-		nResults := 0
-		for clientResult := range ch {
-			nResults++
+		// Check amt. for results.
+		ch, nResults := countChan(ch)
+		if nResults != n {
+			t.Fatal("got an unexpected amt of results:", nResults)
+		}
 
+		for clientResult := range ch {
 			if err := clientResult.NetErr; err != nil {
 				t.Fatal("one node got a network err:", err)
 			}
@@ -106,10 +110,6 @@ func TestCompositeSSpaceDim(t *testing.T) {
 				t.Fatal("got unexpected dim result:", dimRes)
 			}
 		}
-
-		if nResults != n {
-			t.Fatal("got an unexpected amt of results, nResults")
-		}
 	})
 
 	if err != nil {
@@ -117,7 +117,7 @@ func TestCompositeSSpaceDim(t *testing.T) {
 	}
 }
 
-func TestCompositeSSpaceLen(t *testing.T) {
+func TestCompositeInfoSSpaceLen(t *testing.T) {
 	n := 3
 	err := withNetwork(t, n, func(tn *testNetwork) {
 		// Create some data so there is a namespace and len.
@@ -128,9 +128,15 @@ func TestCompositeSSpaceLen(t *testing.T) {
 
 		// Any node to get namespace.
 		ns := tn.nodes[tn.addrs[0]].rManMeta.namespace
+
 		ch := NewClients(tn.addrs).Info().SSpaceLen(ns)
 
-		nResults := 0
+		// Check amt. for results.
+		ch, nResults := countChan(ch)
+		if nResults != n {
+			t.Fatal("got an unexpected amt of results:", nResults)
+		}
+
 		for clientResult := range ch {
 			nResults++
 
@@ -146,10 +152,6 @@ func TestCompositeSSpaceLen(t *testing.T) {
 				t.Fatal("got unexpected len result:", lenRes)
 			}
 		}
-
-		if nResults != n {
-			t.Fatal("got an unexpected amt of results, nResults")
-		}
 	})
 
 	if err != nil {
@@ -157,7 +159,7 @@ func TestCompositeSSpaceLen(t *testing.T) {
 	}
 }
 
-func TestCompositeSSpaceCap(t *testing.T) {
+func TestCompositeInfoSSpaceCap(t *testing.T) {
 	n := 3
 	err := withNetwork(t, n, func(tn *testNetwork) {
 		for _, node := range tn.nodes {
@@ -168,12 +170,16 @@ func TestCompositeSSpaceCap(t *testing.T) {
 		node := tn.nodes[tn.addrs[0]]
 		ns := node.rManMeta.namespace
 		expectCap := node.rManMeta.newSearchSpaceArgs.SearchSpacesMaxCap
+
 		ch := NewClients(tn.addrs).Info().SSpaceCap(ns)
 
-		nResults := 0
-		for clientResult := range ch {
-			nResults++
+		// Check amt. for results.
+		ch, nResults := countChan(ch)
+		if nResults != n {
+			t.Fatal("got an unexpected amt of results:", nResults)
+		}
 
+		for clientResult := range ch {
 			if err := clientResult.NetErr; err != nil {
 				t.Fatal("one node got a network err:", err)
 			}
@@ -186,10 +192,6 @@ func TestCompositeSSpaceCap(t *testing.T) {
 				t.Fatal("got unexpected len result:", capRes)
 			}
 		}
-
-		if nResults != n {
-			t.Fatal("got an unexpected amt of results, nResults")
-		}
 	})
 
 	if err != nil {
@@ -197,7 +199,7 @@ func TestCompositeSSpaceCap(t *testing.T) {
 	}
 }
 
-func TestCompositeKNNLatency(t *testing.T) {
+func TestCompositeInfoKNNLatency(t *testing.T) {
 	n := 3
 	err := withNetwork(t, n, func(tn *testNetwork) {
 
@@ -249,7 +251,7 @@ func TestCompositeKNNLatency(t *testing.T) {
 
 }
 
-func TestCompositeKNNMonitor(t *testing.T) {
+func TestCompositeInfoKNNMonitor(t *testing.T) {
 	n := 3
 	err := withNetwork(t, n, func(tn *testNetwork) {
 

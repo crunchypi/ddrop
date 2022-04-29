@@ -17,8 +17,16 @@ as in client_test.go and clientinfo_test.go
 */
 
 func TestCompositePing(t *testing.T) {
-	err := withNetwork(t, 3, func(tn *testNetwork) {
+    n := 3
+
+	err := withNetwork(t, n, func(tn *testNetwork) {
 		ch := NewClients(tn.addrs, time.Second).Ping()
+
+        ch, nResps := countChan(ch)
+        if nResps != n {
+            t.Fatal("unexpected amt of responses:", nResps)
+        }
+
 		// Make sure that all were ok.
 		for clientResult := range ch {
 			if err := clientResult.NetErr; err != nil {
@@ -36,7 +44,9 @@ func TestCompositePing(t *testing.T) {
 }
 
 func TestCompositeAddData(t *testing.T) {
-	err := withNetwork(t, 3, func(tn *testNetwork) {
+    n := 3
+
+	err := withNetwork(t, n, func(tn *testNetwork) {
 		// Use any node to get a valid namespace and dim.
 		node := tn.nodes[tn.addrs[0]]
 		ns := node.rManMeta.namespace
@@ -48,7 +58,12 @@ func TestCompositeAddData(t *testing.T) {
 		}
 		ch := NewClients(tn.addrs, time.Minute).AddData(payload)
 
-		// The Clients.AddData method should place data at _one_ server.
+        // The Clients.AddData method should place data at _one_ server.
+        ch, nResps := countChan(ch)
+        if nResps != 1 {
+            t.Fatal("unexpected amt of responses:", nResps)
+        }
+
 		// This is to get that address in order to check the relevant
 		// requestman.Handle instance for correct state (new data).
 		recieveNodeAddr := ""
@@ -69,10 +84,6 @@ func TestCompositeAddData(t *testing.T) {
 				t.Fatal("got more than one result")
 			}
 			recieveNodeAddr = clientResult.RemoteAddr
-		}
-
-		if recieveNodeAddr == "" {
-			t.Fatal("got no results")
 		}
 
 		// Validate that the new data was actually placed.
