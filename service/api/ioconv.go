@@ -1,9 +1,15 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
+	"time"
+
+	"github.com/crunchypi/ddrop/pkg/knnc"
+	"github.com/crunchypi/ddrop/pkg/timex"
+	rman "github.com/crunchypi/ddrop/service/requestman"
 )
 
 // withNetIO is a convenience func for unpacking json requests (T) and packing
@@ -56,4 +62,69 @@ func withNetIO[T, U any](
 		return
 	}
 	w.Write(b)
+}
+
+// newSearchSpacesArgs mirrors knnc.NewSearchSpacesArgs, see docs for that
+// struct for more info. This is defined seperately for struct tags.
+type newSearchSpacesArgs struct {
+	SearchSpacesMaxCap      int           `json:"searchSpacesMaxCap"`
+	SearchSpacesMaxN        int           `json:"searchSpacesMaxN"`
+	MaintenanceTaskInterval time.Duration `json:"maintenanceTaskInterval"`
+}
+
+// export converts this instance into its exported equivalent in the knnc pkg.
+func (args *newSearchSpacesArgs) export() knnc.NewSearchSpacesArgs {
+	return knnc.NewSearchSpacesArgs{
+		SearchSpacesMaxCap:      args.SearchSpacesMaxCap,
+		SearchSpacesMaxN:        args.SearchSpacesMaxN,
+		MaintenanceTaskInterval: args.MaintenanceTaskInterval,
+	}
+}
+
+// newLatencyTrackerArgs mirrors timex.NewLatencyTrackerArgs, see docs for that
+// struct for more info. This is defined seperately for struct tags.
+type newLatencyTrackerArgs struct {
+	MaxChainLinkN    int           `json:"maxChainLinkN"`
+	MinChainLinkSize time.Duration `json:"minChainLinkSize"`
+	StandardPeriod   time.Duration `json:"standardPeriod"`
+}
+
+// export converts this instance into its exported equivalent in the timex pkg.
+func (args *newLatencyTrackerArgs) export() timex.NewLatencyTrackerArgs {
+	return timex.NewLatencyTrackerArgs{
+		MaxChainLinkN:    args.MaxChainLinkN,
+		MinChainLinkSize: args.MinChainLinkSize,
+		StandardPeriod:   args.StandardPeriod,
+	}
+}
+
+// newRequestManagerHandleArgs mirrors (almost) requestmanager.NewHandleArgs,
+// see docs for that struct for more info. This is redefined for struct tags.
+// Note: The only difference is that the Ctx field is excluded (naturally).
+type newRequestManagerHandleArgs struct {
+	NewSearchSpacesArgs   newSearchSpacesArgs   `json:"newSearchSpacesArgs"`
+	NewLatencyTrackerArgs newLatencyTrackerArgs `json:"newLatencyTrackerArgs"`
+	KNNQueueBuf           int                   `json:"knnQueueBuf"`
+	KNNQueueMaxConcurrent int                   `json:"knnQueueMaxConcurrent"`
+	NewKNNMonitorArgs     newLatencyTrackerArgs `json:"newKNNMonitorArgs"`
+}
+
+// export converts this instance into its exported equivalent in the requestmanager pkg.
+func (args *newRequestManagerHandleArgs) export(ctx context.Context) rman.NewHandleArgs {
+	return rman.NewHandleArgs{
+		NewSearchSpaceArgs:    args.NewSearchSpacesArgs.export(),
+		NewLatencyTrackerArgs: args.NewLatencyTrackerArgs.export(),
+		KNNQueueBuf:           args.KNNQueueBuf,
+		KNNQueueMaxConcurrent: args.KNNQueueMaxConcurrent,
+		Ctx:                   ctx,
+		NewKNNMonitorArgs:     args.NewKNNMonitorArgs.export(),
+	}
+}
+
+// rpcServerStartArgs is originally intended as json args/options for the
+// "/ops/server/start" endpoint (method handle.RPCServerStart). It is used
+// to start a new ops.Server with ops.NewServer.
+type rpcServerStartArgs struct {
+	Addr string                      `json:"rpcAddr"`
+	Cfg  newRequestManagerHandleArgs `json:"cfg"`
 }

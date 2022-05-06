@@ -4,21 +4,24 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/crunchypi/ddrop/service/ops"
 )
 
 func TestPing(t *testing.T) {
 	addr := freeLocalNoFail(t)
-	ctx, ctxStop := context.WithCancel(context.Background())
+	url := "http://localhost" + addr + "/ping"
 
+	ctx, ctxStop := context.WithCancel(context.Background())
 	ok, err := StartServer(StartServerArgs{
-		Addr:         addr,
-		Ctx:          ctx,
-		ReadTimeout:  time.Minute,
-		WriteTimeout: time.Minute,
+		Addr:                   addr,
+		Ctx:                    ctx,
+		ReadTimeout:            time.Minute,
+		WriteTimeout:           time.Minute,
+		UpdateFrequencyAddrSet: time.Second,
 		onRunning: func(h *handle) {
 			defer ctxStop()
 
-			url := "http://localhost" + addr + "/ping"
 			r, err := post[bool](url, true)
 			if err != nil {
 				t.Fatal(err)
@@ -36,18 +39,19 @@ func TestPing(t *testing.T) {
 
 func TestRPCAddrsPut(t *testing.T) {
 	addr := freeLocalNoFail(t)
-	ctx, ctxStop := context.WithCancel(context.Background())
+	url := "http://localhost" + addr + "/ops/rpc/addrs/put"
 
+	ctx, ctxStop := context.WithCancel(context.Background())
 	ok, err := StartServer(StartServerArgs{
-		Addr:         addr,
-		Ctx:          ctx,
-		ReadTimeout:  time.Minute,
-		WriteTimeout: time.Minute,
+		Addr:                   addr,
+		Ctx:                    ctx,
+		ReadTimeout:            time.Minute,
+		WriteTimeout:           time.Minute,
+		UpdateFrequencyAddrSet: time.Second,
 		onRunning: func(h *handle) {
 			defer ctxStop()
 			newAddr := "test"
 
-			url := "http://localhost" + addr + "/ops/addrs/put"
 			r, err := post[[]string](url, []string{newAddr})
 			if err != nil {
 				t.Fatal(err)
@@ -71,19 +75,20 @@ func TestRPCAddrsPut(t *testing.T) {
 
 func TestRPCAddrsGet(t *testing.T) {
 	addr := freeLocalNoFail(t)
-	ctx, ctxStop := context.WithCancel(context.Background())
+	url := "http://localhost" + addr + "/ops/rpc/addrs/get"
 
+	ctx, ctxStop := context.WithCancel(context.Background())
 	ok, err := StartServer(StartServerArgs{
-		Addr:         addr,
-		Ctx:          ctx,
-		ReadTimeout:  time.Minute,
-		WriteTimeout: time.Minute,
+		Addr:                   addr,
+		Ctx:                    ctx,
+		ReadTimeout:            time.Minute,
+		WriteTimeout:           time.Minute,
+		UpdateFrequencyAddrSet: time.Second,
 		onRunning: func(h *handle) {
 			defer ctxStop()
 			newAddr := "test"
 			h.addrSet.addrsMaintanedLocked(newAddr)
 
-			url := "http://localhost" + addr + "/ops/addrs/get"
 			r, err := post[[]string](url, struct{}{})
 			if err != nil {
 				t.Fatal(err)
@@ -103,4 +108,134 @@ func TestRPCAddrsGet(t *testing.T) {
 	if !ok || err != nil {
 		t.Fatalf("issue with server, returned bool=%v, err=%v", ok, err)
 	}
+}
+
+func TestRPCServerStop(t *testing.T) {
+	addrAPI := freeLocalNoFail(t)
+	addrRPC := freeLocalNoFail(t)
+	url := "http://localhost" + addrAPI + "/ops/rpc/server/stop"
+
+	ctx, ctxStop := context.WithCancel(context.Background())
+	ok, err := StartServer(StartServerArgs{
+		Addr:                   addrAPI,
+		Ctx:                    ctx,
+		ReadTimeout:            time.Minute,
+		WriteTimeout:           time.Minute,
+		UpdateFrequencyAddrSet: time.Second,
+		onRunning: func(h *handle) {
+			defer ctxStop()
+
+			args := newRequestManagerHandleArgs{
+				NewSearchSpacesArgs: newSearchSpacesArgs{
+					SearchSpacesMaxCap:      100,
+					SearchSpacesMaxN:        100,
+					MaintenanceTaskInterval: time.Second,
+				},
+				NewLatencyTrackerArgs: newLatencyTrackerArgs{
+					MaxChainLinkN:    10,
+					MinChainLinkSize: time.Second,
+					StandardPeriod:   time.Second,
+				},
+				KNNQueueBuf:           100,
+				KNNQueueMaxConcurrent: 100,
+				NewKNNMonitorArgs: newLatencyTrackerArgs{
+					MaxChainLinkN:    10,
+					MinChainLinkSize: time.Second,
+					StandardPeriod:   time.Second,
+				},
+			}
+
+			newServer, ok := ops.NewServer(addrRPC, args.export(ctx))
+			if !ok {
+				t.Fatal("could not set up a new rpc server instance")
+			}
+			newServerStopF, err := newServer.StartListen()
+			if err != nil {
+				t.Fatal("could not start listening with the new rpc server")
+			}
+
+			newServerStopped := false
+			newServerStopFChained := func() {
+				newServerStopF()
+				newServerStopped = true
+			}
+
+			h.rpcServerWrap.mx.Lock()
+			h.rpcServerWrap.state = rpcServerStateStarted
+			h.rpcServerWrap.inner.server = newServer
+			h.rpcServerWrap.inner.serverStopF = newServerStopFChained
+			h.rpcServerWrap.mx.Unlock()
+
+			r, err := post[status](url, struct{}{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r.Code != int(rpcServerStateStopped) {
+				t.Fatal("got unexpected state:", r.Msg)
+			}
+			if !newServerStopped {
+				t.Fatal("internal rpc server did not get stop signal")
+			}
+		},
+	})
+
+	if !ok || err != nil {
+		t.Fatalf("issue with server, returned bool=%v, err=%v", ok, err)
+	}
+}
+
+func TestRPCServerStart(t *testing.T) {
+	addrAPI := freeLocalNoFail(t)
+	addrRPC := freeLocalNoFail(t)
+	url := "http://localhost" + addrAPI + "/ops/rpc/server/start"
+
+	ctx, ctxStop := context.WithCancel(context.Background())
+	ok, err := StartServer(StartServerArgs{
+		Addr:                   addrAPI,
+		Ctx:                    ctx,
+		ReadTimeout:            time.Minute,
+		WriteTimeout:           time.Minute,
+		UpdateFrequencyAddrSet: time.Second,
+		onRunning: func(h *handle) {
+			defer ctxStop()
+
+			args := newRequestManagerHandleArgs{
+				NewSearchSpacesArgs: newSearchSpacesArgs{
+					SearchSpacesMaxCap:      100,
+					SearchSpacesMaxN:        100,
+					MaintenanceTaskInterval: time.Second,
+				},
+				NewLatencyTrackerArgs: newLatencyTrackerArgs{
+					MaxChainLinkN:    10,
+					MinChainLinkSize: time.Second,
+					StandardPeriod:   time.Second,
+				},
+				KNNQueueBuf:           100,
+				KNNQueueMaxConcurrent: 100,
+				NewKNNMonitorArgs: newLatencyTrackerArgs{
+					MaxChainLinkN:    10,
+					MinChainLinkSize: time.Second,
+					StandardPeriod:   time.Second,
+				},
+			}
+
+			r, err := post[status](url, rpcServerStartArgs{addrRPC, args})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r.Code != int(rpcServerStateStarted) {
+				t.Fatal("got unexpected state:", r.Msg)
+			}
+			h.rpcServerWrap.mx.Lock()
+			defer h.rpcServerWrap.mx.Unlock()
+			if h.rpcServerWrap.inner.server == nil {
+				t.Fatal("internal rpc server is nil")
+			}
+		},
+	})
+
+	if !ok || err != nil {
+		t.Fatalf("issue with server, returned bool=%v, err=%v", ok, err)
+	}
+
 }
