@@ -7,23 +7,6 @@ import (
 	"time"
 )
 
-// handle with be the server handle, the thing that holds state.
-type handle struct {
-	ctx context.Context
-}
-
-// registerRoutes registers all endpoints for this server handle.
-func (h *handle) registerRoutes(mux *http.ServeMux) {
-	// Key: endpoint url, Val: rcv method.
-	routes := map[string]func(http.ResponseWriter, *http.Request){
-		"/ping": h.Ping,
-	}
-
-	for k, v := range routes {
-		mux.Handle(k, http.HandlerFunc(v))
-	}
-}
-
 // StartServerArgs is intended as args for func StartServer. Check if it's set
 // up correctly with the StartServerArgs.Ok() method.
 type StartServerArgs struct {
@@ -46,14 +29,26 @@ type StartServerArgs struct {
 	// it is set up; as such it is only intended for in-pkg testing.
 	// Note that it is also started with a separate goroutine.
 	onRunning func(h *handle)
+
+	// UpdateFrequencyAddrSet specifies how often the internal set of rpc addrs
+	// will be refreshed. These addrs are used with the /service/ops pkg for
+	// things such as doing KNN requests -- the refreshing will be done by
+	// calling /service/ops/Client.Ping and is as such costly network calls.
+	// Note that adding these addrs is done with endpoint ip:port/ops/addrs/put.
+	UpdateFrequencyAddrSet time.Duration
 }
 
-// Ok returns true if all the minimum requirements are met.
+// Ok returns true if all the minimum requirements are met, specifically:
+// - args.Ctx != nil
+// - args.ReadTimeout > 0
+// - args.WriteTimeout > 0
+// - args.UpdateFrequencyAddrSet > 0
 func (args *StartServerArgs) Ok() bool {
 	ok := true
 	ok = ok && args.Ctx != nil
 	ok = ok && args.ReadTimeout > 0
 	ok = ok && args.WriteTimeout > 0
+	ok = ok && args.UpdateFrequencyAddrSet > 0
 	return ok
 }
 
@@ -97,7 +92,13 @@ func StartServer(args StartServerArgs) (bool, error) {
 	}()
 
 	// Setup handle and routes.
-	h := handle{}
+	h := handle{
+		ctx: args.Ctx,
+		addrSet: addrSet{
+			_addrs:          make(map[string]bool),
+			updateFrequency: args.UpdateFrequencyAddrSet,
+		},
+	}
 	h.registerRoutes(mux)
 
 	// Give handle to testing.

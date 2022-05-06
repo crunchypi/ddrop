@@ -63,6 +63,5 @@ func post[T any](url string, data any) (T, error) {
 	if err != nil {
 		return r, err
 	}
-
 	return r, json.Unmarshal(b, &r)
 }
