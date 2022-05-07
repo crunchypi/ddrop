@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/crunchypi/ddrop/service/ops"
+	rman "github.com/crunchypi/ddrop/service/requestman"
 )
 
 func TestPing(t *testing.T) {
@@ -237,5 +238,120 @@ func TestRPCServerStart(t *testing.T) {
 	if !ok || err != nil {
 		t.Fatalf("issue with server, returned bool=%v, err=%v", ok, err)
 	}
+}
 
+func TestRPCPing(t *testing.T) {
+	nNodes := 3
+	url := func(addr string) string {
+		return "http://localhost" + addr + "/cmd/ping"
+	}
+	withNetwork(t, nNodes, func(tn *testNetwork) {
+		url := url(tn.nodes[0].addrAPI)
+		r, err := post[[]clientResult[bool]](url, struct{}{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(r) != nNodes {
+			t.Fatal("unexpected resp len:", len(r))
+		}
+		for _, cliResp := range r {
+			if !cliResp.Payload {
+				t.Fatal("got one not-ok from addr:", cliResp.RemoteAddr)
+			}
+		}
+	})
+}
+
+func TestRPCAddData(t *testing.T) {
+	nNodes := 3
+	url := func(addr string) string {
+		return "http://localhost" + addr + "/cmd/add"
+	}
+	withNetwork(t, nNodes, func(tn *testNetwork) {
+		url := url(tn.nodes[0].addrAPI)
+
+		opts := []addDataArgs{
+			{Namespace: "", Vec: []float64{1}, Data: []byte{}},
+		}
+
+		r, err := post[[]clientResult[[]bool]](url, opts)
+		if err != nil {
+			t.Fatal("issue sending/receiving:", err)
+		}
+
+		if r == nil || len(r) == 0 {
+			t.Fatal("empty response")
+		}
+		// opts.Clients.AddData adds all data to a single node.
+		if r[0].Payload == nil {
+			t.Fatal("empty payload")
+		}
+		if len(r[0].Payload) != 1 {
+			t.Fatal("unexpected amt. for responses:", len(r[0].Payload))
+		}
+		for _, cliResp := range r {
+			for _, okBool := range cliResp.Payload {
+				if !okBool {
+					t.Fatal("unexpected not-ok")
+				}
+			}
+		}
+	})
+}
+
+func TestRPCKNN(t *testing.T) {
+	nNodes := 3
+	url := func(addr string) string {
+		return "http://localhost" + addr + "/cmd/knn"
+	}
+	withNetwork(t, nNodes, func(tn *testNetwork) {
+		url := url(tn.nodes[0].addrAPI)
+
+		// Fill search spaces / vec pools with data.
+		namespace := "test"
+		dim := 3
+		tn.fill(namespace, 1000, dim)
+
+		// A couple query vecs.
+		v1, ok := randFloat64Slice(dim)
+		if !ok {
+			t.Fatal("could not make query vec no. 1")
+		}
+		v2, ok := randFloat64Slice(dim)
+		if !ok {
+			t.Fatal("could not make query vec no. 2")
+		}
+
+		opts := knnArgs{
+			QueryVecs: [][]float64{v1, v2},
+			Args: knnArgsPartial{
+				Namespace: namespace,
+				Priority:  1,
+				KNNMethod: rman.KNNMethodCosineSimilarity,
+				Ascending: false,
+				K:         5,
+				Extent:    1,
+				Accept:    0.5,
+				Reject:    0.4,
+				TTL:       time.Hour,
+				Monitor:   false,
+			},
+		}
+
+		r, err := post[[]knnResp](url, opts)
+		if err != nil {
+			t.Fatal("issue sending/receiving:", err)
+		}
+
+		if len(r) != len(opts.QueryVecs) {
+			s := "unexpected amt of resutls (with regards to no. of vecs):"
+			t.Fatal(s, len(r))
+		}
+
+		for _, rItem := range r {
+			if len(rItem.Results) != opts.Args.K {
+				t.Fatal("unexpected amt of results (knn items per vec)")
+			}
+		}
+	})
 }

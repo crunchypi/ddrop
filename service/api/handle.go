@@ -142,6 +142,9 @@ func (h *handle) registerRoutes(mux *http.ServeMux) {
 		"/ops/rpc/addrs/get":    h.RPCAddrsGet,
 		"/ops/rpc/server/stop":  h.RPCServerStop,
 		"/ops/rpc/server/start": h.RPCServerStart,
+		"/cmd/ping":             h.RPCPing,
+		"/cmd/add":              h.RPCAddData,
+		"/cmd/knn":              h.RPCKNNEager,
 	}
 
 	for k, v := range routes {
