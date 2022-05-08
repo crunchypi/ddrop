@@ -249,3 +249,62 @@ type knnResp struct {
 	QueryVecIndex int                         `json:"queryVecIndex"`
 	Results       []clientResult[knnRespItem] `json:"results"`
 }
+
+// sSpaceDimResp mirrors the _exported_ T of the same in pkg ops, see docs for
+// that struct for more info. This is defined seperately for struct tags.
+type sSpaceDimResp struct {
+	LookupOk bool `json:"lookupOk"`
+	Dim      int  `json:"dim"`
+}
+
+// sSpaceLenResp mirrors the _exported_ T of the same in pkg ops, see docs for
+// that struct for more info. This is defined seperately for struct tags.
+type sSpaceLenResp struct {
+	LookupOk bool `json:"lookupOk"`
+	NSSpaces int  `json:"nSearchSpaces"`
+	NVecs    int  `json:"nVecs"`
+}
+
+// sSpaceCapResp mirrors the _exported_ T of the same in pkg ops, see docs for
+// that struct for more info. This is defined seperately for struct tags.
+type sSpaceCapResp struct {
+	LookupOk bool `json:"lookupOk"`
+	Cap      int  `json:"cap"`
+}
+
+// knnLatencyArgs mirrors ops.KNNLatencyArgs; see docs for that struct for more
+// info. This is redefined seperately for struct tags.
+type knnLatencyArgs struct {
+	Key    string        `json:"key"`
+	Period time.Duration `json:"period"`
+}
+
+// knnLatencyResp mirrors ops.KNNLatencyResp; see docs for that struct for more
+// info. This is redefined seperately for struct tags.
+type knnLatencyResp struct {
+	LookupOk bool          `json:"lookupOk"`
+	Queue    time.Duration `json:"queue"`
+	Query    time.Duration `json:"query"`
+	BoundsOk bool          `json:"boundsOk"`
+}
+
+// knnMonArgs mirrors ops.KNNMonArgs; see docs for that struct for more info.
+// This is redefined seperately for struct tags.
+type knnMonArgs struct {
+	Start time.Time `json:"start"`
+	End   time.Time `json:"end"`
+}
+
+// knnMonItemAvg mirrors _almost requestman.KNNMonItemAvg; see docs for that
+// struct for more info. This is redefined seperately for struct tags.
+// Note, the only difference is that this struct excludes private fields.
+type knnMonItemAvg struct {
+	Created         time.Time     `json:"created"`
+	Span            time.Duration `json:"span"`
+	N               int           `json:"n"`
+	NFailed         int           `json:"nFailed"`
+	AvgLatency      time.Duration `json:"avgLatency"`
+	AvgScore        float64       `json:"avgScore"`
+	AvgScoreNoFails float64       `json:"avgScoreNoFails"`
+	AvgSatisfaction float64       `json:"avgSatisfaction"`
+}

@@ -355,3 +355,196 @@ func TestRPCKNN(t *testing.T) {
 		}
 	})
 }
+
+func TestSSpaceNamespaces(t *testing.T) {
+	nNodes := 2
+	url := func(addr string) string {
+		return "http://localhost" + addr + "/info/namespaces"
+	}
+	withNetwork(t, nNodes, func(tn *testNetwork) {
+		url := url(tn.nodes[0].addrAPI)
+
+		namespace := "test"
+		tn.fill(namespace, 1, 1)
+
+		r, err := post[[]clientResult[[]string]](url, struct{}{})
+		if err != nil {
+			t.Fatal("issue sending/receiving:", err)
+		}
+
+		for _, rItem := range r {
+			if rItem.Payload == nil || len(rItem.Payload) == 0 {
+				t.Fatal("empty result")
+			}
+			if rItem.Payload[0] != namespace {
+				t.Fatal("unexpected result:", rItem.Payload[0])
+			}
+		}
+	})
+}
+
+func TestSSpaceNamespace(t *testing.T) {
+	nNodes := 2
+	url := func(addr string) string {
+		return "http://localhost" + addr + "/info/namespace"
+	}
+	withNetwork(t, nNodes, func(tn *testNetwork) {
+		url := url(tn.nodes[0].addrAPI)
+
+		namespace := "test"
+		tn.fill(namespace, 1, 1)
+
+		r, err := post[[]clientResult[bool]](url, namespace)
+		if err != nil {
+			t.Fatal("issue sending/receiving:", err)
+		}
+
+		for _, rItem := range r {
+			if !rItem.Payload {
+				t.Fatal("unexpected false response")
+			}
+		}
+	})
+}
+
+func TestSSpaceDim(t *testing.T) {
+	nNodes := 2
+	url := func(addr string) string {
+		return "http://localhost" + addr + "/info/dim"
+	}
+	withNetwork(t, nNodes, func(tn *testNetwork) {
+		url := url(tn.nodes[0].addrAPI)
+
+		namespace := "test"
+		dim := 3
+		tn.fill(namespace, 1, dim)
+
+		r, err := post[[]clientResult[sSpaceDimResp]](url, namespace)
+		if err != nil {
+			t.Fatal("issue sending/receiving:", err)
+		}
+
+		for _, rItem := range r {
+			if rItem.Payload.Dim != dim {
+				t.Fatal("unexpected dim response:", rItem.Payload.Dim)
+			}
+		}
+	})
+}
+
+func TestSSpaceLen(t *testing.T) {
+	nNodes := 2
+	url := func(addr string) string {
+		return "http://localhost" + addr + "/info/len"
+	}
+	withNetwork(t, nNodes, func(tn *testNetwork) {
+		url := url(tn.nodes[0].addrAPI)
+
+		namespace := "test"
+		nVecs := 10
+		tn.fill(namespace, nVecs, 1)
+
+		r, err := post[[]clientResult[sSpaceLenResp]](url, namespace)
+		if err != nil {
+			t.Fatal("issue sending/receiving:", err)
+		}
+
+		for _, rItem := range r {
+			if rItem.Payload.NVecs != nVecs {
+				t.Fatal("unexpected dim response:", rItem.Payload.NVecs)
+			}
+		}
+	})
+}
+
+func TestSSpaceCap(t *testing.T) {
+	nNodes := 2
+	url := func(addr string) string {
+		return "http://localhost" + addr + "/info/cap"
+	}
+	withNetwork(t, nNodes, func(tn *testNetwork) {
+		url := url(tn.nodes[0].addrAPI)
+
+		namespace := "test"
+		nVecs := 10
+		tn.fill(namespace, nVecs, 1)
+
+		r, err := post[[]clientResult[sSpaceCapResp]](url, namespace)
+		if err != nil {
+			t.Fatal("issue sending/receiving:", err)
+		}
+
+		for _, rItem := range r {
+			// Weak check, just makes sure it's not a default 0.
+			if rItem.Payload.Cap == 0 {
+				t.Fatal("unexpected cap response:", rItem.Payload.Cap)
+			}
+		}
+	})
+}
+
+func TestKNNLatency(t *testing.T) {
+	nNodes := 2
+	url := func(addr string) string {
+		return "http://localhost" + addr + "/info/knnLatency"
+	}
+	withNetwork(t, nNodes, func(tn *testNetwork) {
+		url := url(tn.nodes[0].addrAPI)
+
+		namespace := "test"
+		nVecs := 10
+		dim := 10
+		tn.fill(namespace, nVecs, dim)
+		tn.knnFuzz(namespace, 3, dim, time.Millisecond*50)
+
+		opts := knnLatencyArgs{
+			Key:    namespace,
+			Period: time.Hour,
+		}
+
+		r, err := post[[]clientResult[knnLatencyResp]](url, opts)
+		if err != nil {
+			t.Fatal("issue sending/receiving:", err)
+		}
+
+		for _, rItem := range r {
+			// Weak check, just makes sure it's not a default 0.
+			if rItem.Payload.Query == 0 {
+				t.Fatal("unexpected default latency resp")
+			}
+		}
+	})
+}
+
+func TestKNNMonitor(t *testing.T) {
+	nNodes := 2
+	url := func(addr string) string {
+		return "http://localhost" + addr + "/info/knnMonitor"
+	}
+	withNetwork(t, nNodes, func(tn *testNetwork) {
+		url := url(tn.nodes[0].addrAPI)
+
+		namespace := "test"
+		nVecs := 10
+		dim := 10
+		tn.fill(namespace, nVecs, dim)
+		tn.knnFuzz(namespace, 3, dim, time.Millisecond*50)
+
+		opts := knnMonArgs{
+			Start: time.Now(),
+			End:   time.Now().Add(-time.Hour),
+		}
+
+		r, err := post[[]clientResult[knnMonItemAvg]](url, opts)
+		if err != nil {
+			t.Fatal("issue sending/receiving:", err)
+		}
+
+		for _, rItem := range r {
+			// Weak check, just makes sure it's not a default 0.
+			if rItem.Payload.N == 0 {
+				t.Fatal("unexpected default knnMonItemAvg resp (N field)")
+			}
+		}
+	})
+}

@@ -145,6 +145,13 @@ func (h *handle) registerRoutes(mux *http.ServeMux) {
 		"/cmd/ping":             h.RPCPing,
 		"/cmd/add":              h.RPCAddData,
 		"/cmd/knn":              h.RPCKNNEager,
+		"/info/namespaces":      h.RPCSSpaceNamespaces,
+		"/info/namespace":       h.RPCSSpaceNamespace,
+		"/info/dim":             h.RPCSSpaceDim,
+		"/info/len":             h.RPCSSpaceLen,
+		"/info/cap":             h.RPCSSpaceCap,
+		"/info/knnLatency":      h.RPCKNNLatency,
+		"/info/knnMonitor":      h.RPCKNNMonitor,
 	}
 
 	for k, v := range routes {

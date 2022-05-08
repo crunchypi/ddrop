@@ -121,7 +121,7 @@ func (h *handle) RPCServerStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handle) RPCPing(w http.ResponseWriter, r *http.Request) {
-	// Payload type of return from deferred rpc call.
+	// Payload type of return from deferred rpc call clientResult.
 	type T = bool
 	withNetIO(w, r, func(opts struct{}) []clientResult[T] {
 		addrs := h.addrSet.addrsMaintanedLocked()
@@ -131,7 +131,7 @@ func (h *handle) RPCPing(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handle) RPCAddData(w http.ResponseWriter, r *http.Request) {
-	// Payload type of return from deferred rpc call.
+	// Payload type of return from deferred rpc call clientResult.
 	type T = []bool
 	withNetIO(w, r, func(opts []addDataArgs) []clientResult[T] {
 		addrs := h.addrSet.addrsMaintanedLocked()
@@ -189,5 +189,123 @@ func (h *handle) RPCKNNEager(w http.ResponseWriter, r *http.Request) {
 			resps = append(resps, iKNNResp)
 		}
 		return resps
+	})
+}
+
+func (h *handle) RPCSSpaceNamespaces(w http.ResponseWriter, r *http.Request) {
+	type T = []string
+	withNetIO(w, r, func(_ struct{}) []clientResult[T] {
+		addrs := h.addrSet.addrsMaintanedLocked()
+		ch := ops.NewClients(addrs).Info().SSpaceNamespaces()
+		return newClientResults(ch, func(payload T) T { return payload })
+	})
+
+}
+
+func (h *handle) RPCSSpaceNamespace(w http.ResponseWriter, r *http.Request) {
+	// Payload type of return from deferred rpc call clientResult.
+	type T = bool
+	withNetIO(w, r, func(opts string) []clientResult[T] {
+		addrs := h.addrSet.addrsMaintanedLocked()
+		ch := ops.NewClients(addrs).Info().SSpaceNamespace(opts)
+		return newClientResults(ch, func(payload T) T { return payload })
+	})
+}
+
+func (h *handle) RPCSSpaceDim(w http.ResponseWriter, r *http.Request) {
+	// Payload type of return from deferred rpc call.
+	type T = sSpaceDimResp
+	withNetIO(w, r, func(opts string) []clientResult[T] {
+		addrs := h.addrSet.addrsMaintanedLocked()
+		ch := ops.NewClients(addrs).Info().SSpaceDim(opts)
+		return newClientResults(ch, func(payload ops.SSpaceDimResp) T {
+			return T{
+				LookupOk: payload.LookupOk,
+				Dim:      payload.Dim,
+			}
+		})
+	})
+}
+
+func (h *handle) RPCSSpaceLen(w http.ResponseWriter, r *http.Request) {
+	// Payload type of return from deferred rpc call clientResult.
+	type T = sSpaceLenResp
+	withNetIO(w, r, func(opts string) []clientResult[T] {
+		addrs := h.addrSet.addrsMaintanedLocked()
+		ch := ops.NewClients(addrs).Info().SSpaceLen(opts)
+
+		return newClientResults(ch, func(payload ops.SSpaceLenResp) T {
+			return T{
+				LookupOk: payload.LookupOk,
+				NSSpaces: payload.NSSpaces,
+				NVecs:    payload.NVecs,
+			}
+		})
+	})
+}
+
+func (h *handle) RPCSSpaceCap(w http.ResponseWriter, r *http.Request) {
+	// Payload type of return from deferred rpc call clientResult.
+	type T = sSpaceCapResp
+	withNetIO(w, r, func(opts string) []clientResult[T] {
+		addrs := h.addrSet.addrsMaintanedLocked()
+		ch := ops.NewClients(addrs).Info().SSpaceCap(opts)
+
+		return newClientResults(ch, func(payload ops.SSpaceCapResp) T {
+			return T{
+				LookupOk: payload.LookupOk,
+				Cap:      payload.Cap,
+			}
+		})
+	})
+}
+
+func (h *handle) RPCKNNLatency(w http.ResponseWriter, r *http.Request) {
+	// Payload type of return from deferred rpc call clientResult.
+	type T = knnLatencyResp
+	withNetIO(w, r, func(opts knnLatencyArgs) []clientResult[T] {
+		addrs := h.addrSet.addrsMaintanedLocked()
+
+		conv := ops.KNNLatencyArgs{
+			Key:    opts.Key,
+			Period: opts.Period,
+		}
+		ch := ops.NewClients(addrs).Info().KNNLatency(conv)
+
+		return newClientResults(ch, func(payload ops.KNNLatencyResp) T {
+			return T{
+				LookupOk: payload.LookupOk,
+				Queue:    payload.Queue,
+				Query:    payload.Query,
+				BoundsOk: payload.BoundsOk,
+			}
+		})
+	})
+}
+
+func (h *handle) RPCKNNMonitor(w http.ResponseWriter, r *http.Request) {
+	// Payload type of return from deferred rpc call clientResult.
+	type T = knnMonItemAvg
+	withNetIO(w, r, func(opts knnMonArgs) []clientResult[T] {
+		addrs := h.addrSet.addrsMaintanedLocked()
+
+		conv := ops.KNNMonArgs{
+			Start: opts.Start,
+			End:   opts.End,
+		}
+		ch := ops.NewClients(addrs).Info().KNNMonitor(conv)
+
+		return newClientResults(ch, func(payload rman.KNNMonItemAvg) T {
+			return T{
+				Created:         payload.Created,
+				Span:            payload.Span,
+				N:               payload.N,
+				NFailed:         payload.NFailed,
+				AvgLatency:      payload.AvgLatency,
+				AvgScore:        payload.AvgScore,
+				AvgScoreNoFails: payload.AvgScoreNoFails,
+				AvgSatisfaction: payload.AvgSatisfaction,
+			}
+		})
 	})
 }

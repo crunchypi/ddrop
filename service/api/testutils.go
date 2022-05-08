@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/crunchypi/ddrop/service/ops"
+	rman "github.com/crunchypi/ddrop/service/requestman"
 )
 
 func init() {
@@ -278,6 +279,45 @@ func (tn *testNetwork) fill(ns string, n, dim int) {
 		for _, b := range sResp.Payload {
 			if !b {
 				panic("got false bool resp from ops.Server.AddData")
+			}
+		}
+	}
+}
+
+func (tn *testNetwork) knnFuzz(ns string, n, dim int, wait time.Duration) {
+	for _, node := range tn.nodes {
+		node.handle.rpcServerWrap.mx.Lock()
+		defer node.handle.rpcServerWrap.mx.Unlock()
+
+		for i := 0; i < n; i++ {
+			time.Sleep(wait)
+
+			v, ok := randFloat64Slice(dim)
+			if !ok {
+				panic("could not create vec, check dim")
+			}
+			knnArgs := rman.KNNArgs{
+				Namespace: ns,
+				Priority:  1,
+				QueryVec:  v,
+				KNNMethod: rman.KNNMethodEuclideanDistance,
+				Ascending: true,
+				K:         1,
+				Extent:    1,
+				Accept:    0.0,
+				Reject:    1,
+				TTL:       time.Hour,
+				Monitor:   true,
+			}
+			sArgs := ops.SArgs[rman.KNNArgs]{Payload: knnArgs, SendTime: time.Now()}
+			sResp := ops.SResp[ops.KNNResp]{}
+
+			err := node.handle.rpcServerWrap.inner.server.KNNEager(sArgs, &sResp)
+			if err != nil {
+				panic(err)
+			}
+			if !sResp.Payload.Ok {
+				panic("got false bool resp from ops.Server.KNNEager")
 			}
 		}
 	}
