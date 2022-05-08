@@ -8,24 +8,39 @@ import (
 	rman "github.com/crunchypi/ddrop/service/requestman"
 )
 
+// Ping is a standard ping to this api. Takes to args and returns true if ok.
+//
+// URL: /ping
 func (h *handle) Ping(w http.ResponseWriter, r *http.Request) {
 	withNetIO(w, r, func(_ struct{}) bool {
 		return true
 	})
 }
 
+// RPCAddrsPut tries to register addresses for the rpc network (as defined in
+// the /service/ops pkg). Retruns a list of all currently known rpc addrs.
+//
+// URL: /ops/rpc/addrs/put
 func (h *handle) RPCAddrsPut(w http.ResponseWriter, r *http.Request) {
 	withNetIO(w, r, func(addrs []string) []string {
 		return h.addrSet.addrsMaintanedLocked(addrs...)
 	})
 }
 
+// RPCAddrsGet returns all known addresses for the rpc network, as defined in
+// the /service/ops pkg.
+//
+// URL: /ops/rpc/addrs/get
 func (h *handle) RPCAddrsGet(w http.ResponseWriter, r *http.Request) {
 	withNetIO(w, r, func(_ struct{}) []string {
 		return h.addrSet.addrsMaintanedLocked()
 	})
 }
 
+// RPCServerStop tries to stop the internal rpc server (and all embedded knn
+// vector pool / search space data). Will return a status code and msg.
+//
+// URL: /ops/rpc/server/stop
 func (h *handle) RPCServerStop(w http.ResponseWriter, r *http.Request) {
 	withNetIO(w, r, func(_ struct{}) status {
 		h.rpcServerWrap.mx.Lock()
@@ -58,6 +73,10 @@ func (h *handle) RPCServerStop(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RPCServerStop tries to init a new internal rpc server, using rpcServerStartArgs.
+// Will return a status code and msg.
+//
+// URL: /ops/rpc/server/start
 func (h *handle) RPCServerStart(w http.ResponseWriter, r *http.Request) {
 	withNetIO(w, r, func(opts rpcServerStartArgs) status {
 
@@ -120,6 +139,13 @@ func (h *handle) RPCServerStart(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RPCPing is an endpoint on top of ops.Clients.Ping().
+// See docs for that method for details.
+//
+// URL: /cmd/ping.
+// Addrs: Pulled from internal addr set.
+// Accepts: Nothing.
+// Sends back: []clientResult[bool]
 func (h *handle) RPCPing(w http.ResponseWriter, r *http.Request) {
 	// Payload type of return from deferred rpc call clientResult.
 	type T = bool
@@ -130,6 +156,13 @@ func (h *handle) RPCPing(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RPCAddData is an endpoint on top of ops.Clients.AddData().
+// See docs for that method for details.
+//
+// URL: /cmd/add.
+// Addrs: Pulled from internal addr set.
+// Accepts: []addDataArgs.
+// Sends back: []clientResult[[]bool]
 func (h *handle) RPCAddData(w http.ResponseWriter, r *http.Request) {
 	// Payload type of return from deferred rpc call clientResult.
 	type T = []bool
@@ -146,6 +179,17 @@ func (h *handle) RPCAddData(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RPCKNNEager is an endpoint on top of ops.Clients.KNNEager(...).
+// See docs for that method for more details. However, there is a slight
+// change in usage here: Instead of using requestman.KNNArgs as args,
+// this method uses a variation where the query vector is decoupled such
+// that knn args can be used for multiple vectors. The reason is (1) efficiency
+// and (2) lending Go's concurrency to a client (e.g JS user).
+//
+// URL: /cmd/knn.
+// Addrs: Pulled from internal addr set.
+// Accepts: knnArgs.
+// Sends back: []knnResp.
 func (h *handle) RPCKNNEager(w http.ResponseWriter, r *http.Request) {
 	withNetIO(w, r, func(opts knnArgs) []knnResp {
 		addrs := h.addrSet.addrsMaintanedLocked()
@@ -192,6 +236,13 @@ func (h *handle) RPCKNNEager(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RPCSSpaceNamespaces is an endpoint on top of the SSpaceNamespaces method of
+// ops.Clients.Info(). See docs for that method for details.
+//
+// URL: /info/namespaces.
+// Addrs: Pulled from internal addr set.
+// Accepts: Nothing.
+// Sends back: []clientResult[[]string]
 func (h *handle) RPCSSpaceNamespaces(w http.ResponseWriter, r *http.Request) {
 	type T = []string
 	withNetIO(w, r, func(_ struct{}) []clientResult[T] {
@@ -202,6 +253,13 @@ func (h *handle) RPCSSpaceNamespaces(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// RPCSSpaceNamespace is an endpoint on top of SSpaceNamespace method of
+// ops.Clients.Info(). See docs for that method for details.
+//
+// URL: /info/namespace.
+// Addrs: Pulled from internal addr set.
+// Accepts: string (namespace).
+// Sends back: []clientResult[bool]
 func (h *handle) RPCSSpaceNamespace(w http.ResponseWriter, r *http.Request) {
 	// Payload type of return from deferred rpc call clientResult.
 	type T = bool
@@ -212,6 +270,13 @@ func (h *handle) RPCSSpaceNamespace(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RPCSSpaceDim is an endpoint on top of ops.Clients.Info().SSpaceDim(...).
+// See docs for that method for details.
+//
+// URL: info/dim.
+// Addrs: Pulled from internal addr set.
+// Accepts: string (namespace).
+// Sends back: []clientResult[sSpaceDimResp].
 func (h *handle) RPCSSpaceDim(w http.ResponseWriter, r *http.Request) {
 	// Payload type of return from deferred rpc call.
 	type T = sSpaceDimResp
@@ -227,6 +292,13 @@ func (h *handle) RPCSSpaceDim(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RPCSSpaceLen is an endpoint on top of ops.Clients.Info().SSpaceLen(...).
+// See docs for that method for details.
+//
+// URL: info/len.
+// Addrs: Pulled from internal addr set.
+// Accepts: string (namespace).
+// Sends back: []clientResult[sSpaceLenResp].
 func (h *handle) RPCSSpaceLen(w http.ResponseWriter, r *http.Request) {
 	// Payload type of return from deferred rpc call clientResult.
 	type T = sSpaceLenResp
@@ -244,6 +316,13 @@ func (h *handle) RPCSSpaceLen(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RPCSSpaceCap is an endpoint on top of ops.Clients.Info().SSpaceCap(...).
+// See docs for that method for details.
+//
+// URL: /info/cap.
+// Addrs: Pulled from internal addr set.
+// Accepts: string (namespace).
+// Sends back: []clientResult[sSpaceCapResp].
 func (h *handle) RPCSSpaceCap(w http.ResponseWriter, r *http.Request) {
 	// Payload type of return from deferred rpc call clientResult.
 	type T = sSpaceCapResp
@@ -260,6 +339,13 @@ func (h *handle) RPCSSpaceCap(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RPCKNNLatency is an endpoint on top of ops.Clients.Info().KNNLatency(...).
+// See docs for that method for details.
+//
+// URL: //info/knnLatency.
+// Addrs: Pulled from internal addr set.
+// Accepts: knnLatencyArgs.
+// Sends back: []clientResult[knnLatencyResp].
 func (h *handle) RPCKNNLatency(w http.ResponseWriter, r *http.Request) {
 	// Payload type of return from deferred rpc call clientResult.
 	type T = knnLatencyResp
@@ -283,6 +369,13 @@ func (h *handle) RPCKNNLatency(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RPCKNNMonitor is an endpoint on top of ops.Clients.Info().KNNMonitor(...).
+// See docs for that method for details.
+//
+// URL: /info/knnMonitor.
+// Addrs: Pulled from internal addr set.
+// Accepts: knnMonArgs.
+// Sends back: []clientResult[knnMonItemAvg].
 func (h *handle) RPCKNNMonitor(w http.ResponseWriter, r *http.Request) {
 	// Payload type of return from deferred rpc call clientResult.
 	type T = knnMonItemAvg

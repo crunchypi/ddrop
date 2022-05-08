@@ -128,8 +128,10 @@ type rpcServerWrap struct {
 
 // handle with be the server handle, the thing that holds state.
 type handle struct {
-	ctx           context.Context
-	addrSet       addrSet
+	ctx context.Context
+	// addrSet is a set of rpc addrs (used for ops.Client(s)).
+	addrSet addrSet
+	// rpcServerWrap holds an ops.Server.
 	rpcServerWrap rpcServerWrap
 }
 

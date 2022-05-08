@@ -284,6 +284,8 @@ func (tn *testNetwork) fill(ns string, n, dim int) {
 	}
 }
 
+// knnFuzz tries to make "n" knn requests, with "wait" interval, to the "ns"
+// namespace. The query vector will be random with the specified "dim".
 func (tn *testNetwork) knnFuzz(ns string, n, dim int, wait time.Duration) {
 	for _, node := range tn.nodes {
 		node.handle.rpcServerWrap.mx.Lock()
