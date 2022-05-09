@@ -174,7 +174,7 @@ type addDataArgs struct {
 	Namespace string    `json:"namespace"`
 	Vec       []float64 `json:"vec"`
 	Data      []byte    `json:"data"`
-	Expires   time.Time `json:"expired"`
+	Expires   time.Time `json:"expires"`
 }
 
 // export converts this instance into its exported equivalent in the ops pkg.
