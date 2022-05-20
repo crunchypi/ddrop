@@ -168,13 +168,13 @@ func (h *handle) RPCAddData(w http.ResponseWriter, r *http.Request) {
 	type T = []bool
 	withNetIO(w, r, func(opts []addDataArgs) []clientResult[T] {
 		addrs := h.addrSet.addrsMaintanedLocked()
-        // ops.Clients.AddData, which is used further down, tries to pick a
-        // random address using rand.Intn, which will panic if len=0.
-        if len(addrs) == 0 {
-            return []clientResult[T]{
-                {Payload: make([]bool, len(opts))},
-            }
-        }
+		// ops.Clients.AddData, which is used further down, tries to pick a
+		// random address using rand.Intn, which will panic if len=0.
+		if len(addrs) == 0 {
+			return []clientResult[T]{
+				{Payload: make([]bool, len(opts))},
+			}
+		}
 
 		optsExported := make([]ops.AddDataArgs, 0, len(opts))
 		for _, opt := range opts {
