@@ -1,0 +1,9 @@
+# Mac FS thing.
+.DS_Store
+
+# Vim
+*.swp
+
+# Go profiling.
+*.pprof
+*.trace
