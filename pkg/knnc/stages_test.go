@@ -1,9 +1,12 @@
 package knnc
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/crunchypi/ddrop/pkg/syncx"
 )
 
 func init() {
@@ -17,38 +20,41 @@ func. As such, some common code is factored out and put here at the top.
 --------------------------------------------------------------------------------
 */
 
-func commonTestingCodeBaseStageArgs() BaseStageArgs {
-	return BaseStageArgs{
-		NWorkers: 100,
-		BaseWorkerArgs: BaseWorkerArgs{
-			Buf:    50,
-			Cancel: NewCancelSignal(),
-			TTL:    time.Second * 3,
-		},
+func testUtilCommonStageArgsPartial() syncx.StageArgsPartial {
+	return syncx.StageArgsPartial{
+		Ctx: context.Background(),
+		TTL: time.Second * 3,
+		Buf: 50,
 	}
 }
 
-func commonTestingCodeRawScanItemFaucet(vecs []*tVec) <-chan ScanItem {
-	out := make(chan ScanItem)
-	go func() {
-		defer close(out)
-		for _, v := range vecs {
-			out <- ScanItem{Distancer: v}
-		}
-	}()
-	return out
+// Note; not safe.
+func testUtilRange(start, end, stride int) []int {
+	s := make([]int, 0, (end-start)/stride)
+	for i := start; i < end; i += stride {
+		s = append(s, i)
+	}
+
+	return s
 }
 
-func commonTestingCodeRawScoreItemFaucet(scoreItems []ScoreItem) <-chan ScoreItem {
-	out := make(chan ScoreItem)
-	go func() {
-		defer close(out)
-		for _, scoreItem := range scoreItems {
-			out <- scoreItem
-		}
-	}()
+func testUtilMap[T, U any](s []T, f func(T) U) []U {
+	r := make([]U, len(s))
+	for i, v := range s {
+		r[i] = f(v)
+	}
+	return r
+}
 
-	return out
+func testUtilShuffled[T any](s []T) []T {
+	r := make([]T, len(s))
+	copy(r, s)
+	for i := 0; i < len(s); i++ {
+		j := rand.Intn(len(s))
+		r[i], r[j] = r[j], r[i]
+	}
+
+	return r
 }
 
 /*
@@ -60,23 +66,22 @@ Tests below.
 func TestMapStage(t *testing.T) {
 	// input data.
 	queryVec := newTVec(0)
-	chFaucet := commonTestingCodeRawScanItemFaucet([]*tVec{
-		newTVec(1), // Euclidean dist to qv: 1
-		newTVec(2), // Euclidean dist to qv: 2
+	chIn := syncx.ChanFromSlice([]ScanItem{
+		{newTVec(1)}, // Euclidean dist to qv: 1
+		{newTVec(2)}, // Euclidean dist to qv: 2
 	})
 
 	// Run stage.
 	chOut, ok := MapStage(MapStageArgs{
-		In: chFaucet,
+		NWorkers: 3,
+		In:       chIn,
 		// Note Euclidean distance.
-		MapStagePartialArgs: MapStagePartialArgs{
-			MapFunc: func(d Distancer) (ScoreItem, bool) {
-				score, ok := d.EuclideanDistance(queryVec)
-				// Field 'set' is handled inside stage, so omitted here.
-				return ScoreItem{Score: score}, ok
-			},
-			BaseStageArgs: commonTestingCodeBaseStageArgs(),
+		MapFunc: func(d Distancer) (ScoreItem, bool) {
+			score, ok := d.EuclideanDistance(queryVec)
+			// Field 'set' is handled inside stage, so omitted here.
+			return ScoreItem{Score: score}, ok
 		},
+		StageArgsPartial: testUtilCommonStageArgsPartial(),
 	})
 
 	if !ok {
@@ -105,15 +110,14 @@ func TestFilterStage(t *testing.T) {
 
 	// Run stage.
 	chOut, ok := FilterStage(FilterStageArgs{
+		NWorkers: 3,
 		// Simulate previous (intended as mapping) stage
-		In: commonTestingCodeRawScoreItemFaucet(scores),
-		FilterStagePartialArgs: FilterStagePartialArgs{
-			// Note that everything besides 'dontFilter' is filtered.
-			FilterFunc: func(scoreItem ScoreItem) bool {
-				return scoreItem.Score == dontFilter.Score
-			},
-			BaseStageArgs: commonTestingCodeBaseStageArgs(),
+		In: syncx.ChanFromSlice(scores),
+		// Note that everything besides 'dontFilter' is filtered.
+		FilterFunc: func(scoreItem ScoreItem) bool {
+			return scoreItem.Score == dontFilter.Score
 		},
+		StageArgsPartial: testUtilCommonStageArgsPartial(),
 	})
 
 	if !ok {
@@ -129,31 +133,23 @@ func TestFilterStage(t *testing.T) {
 }
 
 func TestMergeStageAscending(t *testing.T) {
-	n := 100_000
+	n := 1000
 	k := 2
 	ascending := true
 
 	// Input data.
-	scores := make([]ScoreItem, n)
-	for i := 0; i < n; i++ {
-		scores[i] = ScoreItem{Score: float64(i), Set: true}
-	}
-
-	// Shuffle.
-	for i := 0; i < n; i++ {
-		j := rand.Intn(n)
-		scores[i], scores[j] = scores[j], scores[i]
-	}
+	scores := testUtilMap(testUtilRange(0, n, 1), func(i int) ScoreItem {
+		return ScoreItem{Score: float64(i), Set: true}
+	})
+	scores = testUtilShuffled(scores)
 
 	ch, ok := MergeStage(MergeStageArgs{
 		// Simulate previous (intended as mapping) stage, using the input data.
-		In: commonTestingCodeRawScoreItemFaucet(scores),
-		MergeStagePartialArgs: MergeStagePartialArgs{
-			K:             k,
-			Ascending:     ascending,
-			SendInterval:  2,
-			BaseStageArgs: commonTestingCodeBaseStageArgs(),
-		},
+		In:               syncx.ChanFromSlice(scores),
+		K:                k,
+		Ascending:        ascending,
+		SendInterval:     2,
+		StageArgsPartial: testUtilCommonStageArgsPartial(),
 	})
 
 	if !ok {
@@ -179,31 +175,23 @@ func TestMergeStageAscending(t *testing.T) {
 }
 
 func TestMergeStageDescending(t *testing.T) {
-	n := 100_000
+	n := 1000
 	k := 2
 	ascending := false
 
 	// Input data.
-	scores := make([]ScoreItem, n)
-	for i := 0; i < n; i++ {
-		scores[i] = ScoreItem{Score: float64(i), Set: true}
-	}
-
-	// Shuffle.
-	for i := 0; i < n; i++ {
-		j := rand.Intn(n)
-		scores[i], scores[j] = scores[j], scores[i]
-	}
+	scores := testUtilMap(testUtilRange(0, n, 1), func(i int) ScoreItem {
+		return ScoreItem{Score: float64(i), Set: true}
+	})
+	scores = testUtilShuffled(scores)
 
 	ch, ok := MergeStage(MergeStageArgs{
 		// Simulate previous (intended as mapping) stage, using the input data.
-		In: commonTestingCodeRawScoreItemFaucet(scores),
-		MergeStagePartialArgs: MergeStagePartialArgs{
-			K:             k,
-			Ascending:     ascending,
-			SendInterval:  2,
-			BaseStageArgs: commonTestingCodeBaseStageArgs(),
-		},
+		In:               syncx.ChanFromSlice(scores),
+		K:                k,
+		Ascending:        ascending,
+		SendInterval:     2,
+		StageArgsPartial: testUtilCommonStageArgsPartial(),
 	})
 
 	if !ok {
@@ -218,12 +206,12 @@ func TestMergeStageDescending(t *testing.T) {
 	}
 
 	if len(scoreItems) != k {
-		t.Fatal("unexpected len of resulting scoreitems slice:", len(scoreItems))
+		t.Fatal("unexpected len of resulting scoreitems slice", len(scoreItems))
 	}
 
-	a := scoreItems[0].Score
-	b := scoreItems[1].Score
-	if (a != float64(n-1) && b != float64(n-2)) || a == b {
+	a := scoreItems[k-1].Score
+	b := scoreItems[k-2].Score
+	if (a != float64(n-2) && b != float64(n-1)) || a == b {
 		t.Fatal("unexpected result in scoreitems slice:", scoreItems)
 	}
 }

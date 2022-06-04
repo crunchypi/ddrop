@@ -1,8 +1,11 @@
 package knnc
 
 import (
+	"context"
 	"testing"
 	"time"
+
+	"github.com/crunchypi/ddrop/pkg/syncx"
 )
 
 func TestSearchSpaceAddSearchable(t *testing.T) {
@@ -93,10 +96,10 @@ func TestSearchSpaceScanFull(t *testing.T) {
 
 	ch, ok := ss.Scan(SearchSpaceScanArgs{
 		Extent: 1.,
-		BaseWorkerArgs: BaseWorkerArgs{
-			Buf:    1,
-			Cancel: NewCancelSignal(),
-			TTL:    time.Second,
+		StageArgsPartial: syncx.StageArgsPartial{
+			Ctx: context.Background(),
+			TTL: time.Second,
+			Buf: 1,
 		},
 	})
 
@@ -128,10 +131,10 @@ func TestSearchSpaceScanPartial(t *testing.T) {
 	extent := 0.5
 	ch, ok := ss.Scan(SearchSpaceScanArgs{
 		Extent: extent,
-		BaseWorkerArgs: BaseWorkerArgs{
-			Buf:    1,
-			Cancel: NewCancelSignal(),
-			TTL:    time.Second,
+		StageArgsPartial: syncx.StageArgsPartial{
+			Ctx: context.Background(),
+			TTL: time.Second,
+			Buf: 1,
 		},
 	})
 
@@ -159,15 +162,15 @@ func TestSearchSpaceScanStopped(t *testing.T) {
 		},
 	}
 
-	cancel := NewCancelSignal()
+	ctx, ctxCancel := context.WithCancel(context.Background())
 	ch, ok := ss.Scan(SearchSpaceScanArgs{
 		Extent: 1,
-		BaseWorkerArgs: BaseWorkerArgs{
+		StageArgsPartial: syncx.StageArgsPartial{
+			Ctx: ctx,
+			TTL: time.Second,
 			// Must not be buffered or else the block below won't work,
 			// since one item might be put in the chan before close.
-			Buf:    0,
-			Cancel: cancel,
-			TTL:    time.Second,
+			Buf: 0,
 		},
 	})
 
@@ -176,7 +179,8 @@ func TestSearchSpaceScanStopped(t *testing.T) {
 	}
 
 	<-ch
-	cancel.Cancel()
+	ctxCancel()
+	time.Sleep(time.Millisecond * 10)
 	_, ok = <-ch
 	if ok {
 		t.Error("scanner didn't stop after signal")
@@ -196,10 +200,10 @@ func TestSearchSpaceScanConcurrent(t *testing.T) {
 
 	args := SearchSpaceScanArgs{
 		Extent: 1,
-		BaseWorkerArgs: BaseWorkerArgs{
-			Buf:    0,
-			Cancel: NewCancelSignal(),
-			TTL:    time.Second,
+		StageArgsPartial: syncx.StageArgsPartial{
+			Ctx: context.Background(),
+			TTL: time.Second,
+			Buf: 0,
 		},
 	}
 

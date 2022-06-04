@@ -179,7 +179,7 @@ func (s *Server) KNNEager(args SArgs[rman.KNNArgs], resp *SResp[KNNResp]) error 
 	// Await result.
 	select {
 	case <-time.After(args.Payload.TTL + time.Microsecond):
-		enqueueResult.Cancel.Cancel()
+		enqueueResult.Cancel()
 	case result := <-enqueueResult.Pipe:
 		(*resp).Payload.KNN = KNNRespItemsFromScoreItems(result)
 		(*resp).Payload.Ok = true

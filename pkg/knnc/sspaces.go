@@ -1,9 +1,12 @@
 package knnc
 
 import (
+	"context"
 	"reflect"
 	"sync"
 	"time"
+
+	"github.com/crunchypi/ddrop/pkg/syncx"
 )
 
 /*
@@ -44,11 +47,11 @@ type NewSearchSpacesArgs struct {
 //	(2) args.SearchSpacesMaxN > 0
 //	(3)	args.MaintenanceTaskInterval > 0
 func (args *NewSearchSpacesArgs) Ok() bool {
-	return boolsOk([]bool{
-		args.SearchSpacesMaxCap > 0,
-		args.SearchSpacesMaxN > 0,
-		args.MaintenanceTaskInterval > 0,
-	})
+	ok := true
+	ok = ok && args.SearchSpacesMaxN > 0
+	ok = ok && args.SearchSpacesMaxCap > 0
+	ok = ok && args.MaintenanceTaskInterval > 0
+	return ok
 }
 
 // NewSearchSpaces is a factory func for SearchSpaces T. Returns (nil, false)
@@ -199,85 +202,61 @@ func (ss *SearchSpaces) Clear() []*SearchSpace {
 // args.Extent and args.BaseStageArgs.BaseWorkerArgs, as those are required
 // for SearchSpaceScanArgs (again, singular).
 type SearchSpacesScanArgs struct {
-	// Extent refers to the search extent. 1=scan all internal SearchSpace (singular)
-	// instances _completely_, 0.5= scan 50% of all internal SearchSpace instances.
-	Extent float64
-	// The scanning routine counts as a concurrency stage, where each internal
-	// SeachSpace instance counts as a worker, and will as such 'inherit' from
-	// BaseStageArgs.BaseWorkerArgs.
-	BaseStageArgs
+	NWorkers int
+	SearchSpaceScanArgs
 }
 
 // Ok validates SearchSpacesScanArgs. Returns true iff:
-//	(1) args.Extent >= 0.0 and <= 1.0.
-//	(2) args.BaseStageArgs.Ok() is true.
+//  - args.Extent >= 0.0 and <= 1.0.
+//	- args.SearchSpaceArgs.Ok() is true.
 func (args *SearchSpacesScanArgs) Ok() bool {
-	return boolsOk([]bool{
-		args.Extent >= 0.0 && args.Extent <= 1.0,
-		args.BaseStageArgs.Ok(),
-	})
+	ok := true
+	ok = ok && args.NWorkers > 0
+	ok = ok && args.SearchSpaceScanArgs.Ok()
+	return ok
 }
 
-// Scan calls the method with the same name on internal SearchSpace instances
-// and pushes their ScanChan returns to the chan returned here (i.e chan of chans).
-// The process is done in a controlle way such that number of active scanners does
-// not exceed args.BaseStageArgs.NWorkers. See documentation for SearchSpacesScanArgs
-// for more details.
-func (ss *SearchSpaces) Scan(args SearchSpacesScanArgs) (<-chan ScanChan, bool) {
+func (ss *SearchSpaces) Scan(args SearchSpacesScanArgs) (ScanChan, bool) {
 	if !args.Ok() {
 		return nil, false
 	}
 
-	// No point in proceeding if this is not ok (should be, but doing for more
-	// robustness)- and no point in re-creating this on each loop iter below.
-	inheritedArgs := SearchSpaceScanArgs{
-		Extent:         args.Extent,
-		BaseWorkerArgs: args.BaseWorkerArgs,
-	}
-	if ok := inheritedArgs.Ok(); !ok {
-		return nil, false
-	}
-	// This method will keep a consistent number of goroutines active at a time.
-	// To do this, the callback behaviour of SearchSpace.Scan workers is used.
-	oldCallback := inheritedArgs.UnsafeDoneCallback
-	ticker := ActiveGoroutinesTicker{}
-	decrement := ticker.AddAwait()
-	decrement() // ticker back to 0.
-	inheritedArgs.UnsafeDoneCallback = func() {
-		decrement()
-		if oldCallback != nil {
-			oldCallback()
-		}
-	}
+	out := make(chan ScanItem, args.Buf)
+	ctx, ctxStop := context.WithDeadline(args.Ctx, time.Now().Add(args.TTL))
+	args.Ctx = ctx
 
-	out := make(chan ScanChan, args.Buf)
-	deadlineSignal, deadlineSignalCancel := args.DeadlineSignal()
-	defer deadlineSignalCancel.Cancel()
+	// Used for constraining the max amount of goroutines running at a time.
+	ticker := ActiveGoroutinesTicker{}
 
 	go func() {
 		defer close(out)
 		ss.mx.RLock()
 		defer ss.mx.RUnlock()
+		defer ctxStop()
+		defer ticker.BlockUntilBelowN(1)
 
-		// Used for constraining the max amount of goroutines running at a time.
 		for _, searchSpace := range ss.searchSpaces {
-			ticker.BlockUntilBelowN(args.NWorkers + 1)
-			ch, ok := searchSpace.Scan(inheritedArgs)
+			ticker.BlockUntilBelowN(args.NWorkers)
+			ch, ok := searchSpace.Scan(args.SearchSpaceScanArgs)
 			if !ok {
 				continue
 			}
-			// Increment ticker and ignore the returned decrement callback, as
-			// SearchSpace.Scan workers will do that (defined in the block further
-			// up, where UnsafeDoneCallback is set)l
-			ticker.AddAwait()
 
-			select {
-			case out <- ch:
-			case <-args.Cancel.c:
-				return
-			case <-deadlineSignal.c:
-				return
-			}
+			decrement := ticker.AddAwait()
+			go func(ch ScanChan, decrement func()) {
+				defer decrement()
+				syncx.ChanIter(syncx.ChanIterArgs[ScanItem]{
+					In:  ch,
+					Ctx: ctx,
+					Rcv: func(element ScanItem) bool {
+						return syncx.ChanSend(syncx.ChanSendArgs[ScanItem]{
+							Out: out,
+							Ctx: ctx,
+							Elm: element,
+						})
+					},
+				})
+			}(ch, decrement)
 		}
 	}()
 	return out, true

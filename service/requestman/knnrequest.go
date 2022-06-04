@@ -1,10 +1,12 @@
 package requestman
 
 import (
+	"context"
 	"time"
 
 	"github.com/crunchypi/ddrop/pkg/knnc"
 	"github.com/crunchypi/ddrop/pkg/mathx"
+	"github.com/crunchypi/ddrop/pkg/syncx"
 )
 
 /*
@@ -109,10 +111,10 @@ func (r *KNNArgs) Ok() bool {
 type KNNEnqueueResult struct {
 	// Pipe is the destination of a KNN request/query.
 	Pipe chan knnc.ScoreItems
-	// Cancel can be used to cancel a request. Should be called when
-	// the deadline for a request (e.g KNNArgs.TTL is exceeded after
-	// a request is made).
-	Cancel *knnc.CancelSignal
+    // Cancel can be used to cancel a request. This is done automatically
+    // with KNNArgs.TTL when making a query, but the cancel func should
+    // be called nontheless.
+	Cancel context.CancelFunc
 }
 
 // knnRequest is a wrapper around KNNArgs and its primary purpose is to
@@ -132,7 +134,8 @@ type knnRequest struct {
 	// KNNArgs.TTL to know when to cancel a pipeline.
 	created time.Time
 	// Destination of the request.
-	enqueueResult KNNEnqueueResult
+	enqueueResult    KNNEnqueueResult
+	enqueueResultCtx context.Context
 }
 
 // newKNNRequest is a convenience func for creating a knnRequest instance.
@@ -142,14 +145,17 @@ type knnRequest struct {
 // Note that this does not check the args. For safety, use knnRequest.Ok(),
 // if that is needed.
 func newKNNRequest(args *KNNArgs) knnRequest {
+	ctx, ctxCancel := context.WithDeadline(context.Background(), time.Now().Add(args.TTL))
+
 	return knnRequest{
 		args:     args,
 		queryVec: mathx.NewSafeVec(args.QueryVec...),
+		created:  time.Now(),
 		enqueueResult: KNNEnqueueResult{
 			Pipe:   make(chan knnc.ScoreItems),
-			Cancel: knnc.NewCancelSignal(),
+			Cancel: ctxCancel,
 		},
-		created: time.Now(),
+		enqueueResultCtx: ctx,
 	}
 }
 
@@ -162,9 +168,11 @@ func newKNNRequest(args *KNNArgs) knnRequest {
 func (r *knnRequest) Ok() bool {
 	ok := true
 	ok = ok && r.args.Ok()
-	ok = ok && r.enqueueResult.Cancel.Ok()
-	ok = ok && r.enqueueResult.Pipe != nil
+	ok = ok && r.queryVec != nil
 	ok = ok && r.created != time.Time{}
+	ok = ok && r.enqueueResult.Pipe != nil
+	ok = ok && r.enqueueResult.Cancel != nil
+	ok = ok && r.enqueueResultCtx != nil
 	return ok
 }
 
@@ -177,60 +185,100 @@ interact with the knnc package.
 
 // Shorthand def
 
-// mapStageF is compatible with knnc.NewPipelineArgs.MapStage.
+// mapStageF is compatible with knnc.MapStage.
 type mapStageF = func(knnc.ScanChan) (<-chan knnc.ScoreItem, bool)
 
-// filterStageF is compatible with knnc.NewPipelineArgs.FilterStage.
+// filterStageF is compatible with knnc.FilterStage.
 type filterStageF = func(<-chan knnc.ScoreItem) (<-chan knnc.ScoreItem, bool)
 
-// mergeStageF is compatible with knnc.NewPipelineArgs.MergeStage.
+// mergeStageF is compatible with knnc.MergeStage.
 type mergeStageF = func(<-chan knnc.ScoreItem) (<-chan knnc.ScoreItems, bool)
 
-// toBaseWorkerArgs simply converts knnRequest into knnc.BaseWorkerArgs, using
-// some state from the internal knnRequest.args. Specifically:
-//  Buf:    knnRequest.args.Priority
-//  Cancel: knnRequest.enqueueResult.Cancel
-//  TTL:    knnRequest.args.TTL - (time since knnRequest.created)
-func (r *knnRequest) toBaseWorkerArgs() knnc.BaseWorkerArgs {
-	return knnc.BaseWorkerArgs{
-		Buf:    r.args.Priority,
-		Cancel: r.enqueueResult.Cancel,
-		// No point in keeping workers alive for longer than is acceptable by the
-		// query, as it is assumed that it'll cancel after that point anyway.
+// toStageArgsPartial tries to convert internal state into syncx.StageArgsPartial.
+//  - Ctx: knnRequest.enqueueResultCtx
+//  - TTL: knnRequest.args.TTL - time.Now().Sub(r.created)
+//  - Buf: 100. See inline documentation for reasoning.
+func (r *knnRequest) toStageArgsPartial() syncx.StageArgsPartial {
+	return syncx.StageArgsPartial{
+		Ctx: r.enqueueResultCtx,
 		TTL: r.args.TTL - time.Now().Sub(r.created),
+
+		// ---------------------------------------------------------------------
+		// Tests show that the "Buf" field (chan buf in all knnc stages) plays a
+		// large role in performance. Here is some stats for change in "Buf",
+		// and changes in vector pool size (and dimensions). Note that all of
+		// these were ran with 50 retries, using an _exhaustive_ knn search, so
+		// no performance tricks were used (such as changing search extent).
+		// Also, k=3 but 30 was checked as well -- marginal difference.
+		// Also, test machine is m1 macbook air 2020.
+
+		// Table 1: 100k, 3 dim.
+		//
+		// Buf of 0  : ~200ms
+		// Buf of 1  : ~140ms
+		// Buf of 5  : ~ 70ms
+		// Buf of 10 : ~ 60ms
+		// Buf of 100: ~ 45ms
+		// Buf of 200: ~ 45ms
+
+		// Table 2: 10k vecs, 3 dim
+		//
+		// Buf of 0  : ~20ms
+		// Buf of 1  : ~13ms
+		// Buf of 5  : ~8ms
+		// Buf of 10 : ~7ms
+		// Buf of 100: ~5ms
+		// Buf of 200: ~5ms
+
+		// Table 3: 10k vecs, 100 dim
+		// Buf of 0  : ~25ms
+		// Buf of 1  : ~16ms
+		// Buf of 5  : ~10ms
+		// Buf of 10 : ~10ms
+		// Buf of 100: ~7ms
+		// Buf of 200: ~7ms
+
+		// Table 4: 100 vecs, 100 dim
+		//
+		// Buf of 0  : ~300 us
+		// Buf of 1  : ~250 us
+		// Buf of 5  : ~200 us
+		// Buf of 10 : ~200 us
+		// Buf of 100: ~150 us
+		// Buf of 200: ~150 us
+
+		// Almost all cases (tables 1,2,3) show that performance is increased
+		// dramatically up to- and including Buf=100, with diminishing returns
+		// after. There is surely a more precise way of finding optimal buffer,
+		// but 100 is chosen here, based on the data shown above.
+		// ---------------------------------------------------------------------
+
+		Buf: 100,
 	}
 }
 
-//
-func (r *knnRequest) toScanChans(
-	ss *knnc.SearchSpaces,
-) (
-	<-chan knnc.ScanChan,
-	bool,
-) {
+// toScanChan tries to use the internal state to create a knnc.ScanChan.
+// Specifically:
+//  knnc.SearchSpacesScanArgs.NWorkers = knnRequest.Priority.
+//  knnc.SearchSpacesScanArgs.SearchSpacesScanArgs.Extent = knnRequest.args.Extent.
+//  knnc.SearchSpacesScanArgs.SearchSpacesScanArgs.StageArgsPartial
+//      = knnRequest.toStageArgsPartial().
+func (r *knnRequest) toScanChan(ss *knnc.SearchSpaces) (knnc.ScanChan, bool) {
 	if ss == nil {
 		return nil, false
 	}
 
 	return ss.Scan(knnc.SearchSpacesScanArgs{
-		Extent:        r.args.Extent,
-		BaseStageArgs: r.toBaseStageArgs(),
+		NWorkers: r.args.Priority,
+		SearchSpaceScanArgs: knnc.SearchSpaceScanArgs{
+			Extent:           r.args.Extent,
+			StageArgsPartial: r.toStageArgsPartial(),
+		},
 	})
 }
 
-// toBaseStageArgs simply converts a knnRequest to knnc.BaseStageArgs, using
-// some state from the internal knnRequest.args. Specifically:
-//  NWorkers:       knnRequest.args.Priority
-//  BaseWorkerArgs: knnRequest.toBaseWorkerArgs()
-func (r *knnRequest) toBaseStageArgs() knnc.BaseStageArgs {
-	return knnc.BaseStageArgs{
-		NWorkers:       r.args.Priority,
-		BaseWorkerArgs: r.toBaseWorkerArgs(),
-	}
-}
-
-// toMapFunc simply converts a knnRequest into a func that can be used with
-// knnc.MapStagePartialArgs.MapFunc. It is a func where 'other' is compared
+// toMapFunc converts a knnRequest into a func that can be used with
+// knnc.MapStageArgs.MapFunc. It is a func where 'other' is compared
 // against the internal knnRequest.queryVec to produce a distance score, using
 // distance method specifies with knnRequest.KNNMethod. That distance score is
 // returned in the form of knnc.ScoreItem. The bool is whether the distance
@@ -253,25 +301,26 @@ func (r *knnRequest) toMapFunc() func(other mathx.Distancer) (knnc.ScoreItem, bo
 	}
 }
 
-// toMapStage simply converts a knnRequest into a func that is compatible with
-// knnc.NewPipelineArgs.MapStage. It uses knnc.MapStage and constructs its args
-// with the following:
-//  - MapStagePartialArgs.MapFunc = knnRequest.toMapFunc()
-//  - MapStagePartialArgs.BaseStageArgs = knnRequest.toMapFunc()
+// toMapStage uses the internal state in order to return a func which is equivalent
+// to knnc.MapStage, but accepts only an input channel. The following cfg is used
+// in knnc.MapStageArgs:
+//  - NWorkers: knnRequest.args.Priority
+//  - In: specified as args in the func returned here.
+//  - MapFunc: knnRequest.toMapFunc()
+//  - StageArgsPartial: knnRequest.toStageArgsPartial()
 func (r *knnRequest) toMapStage() mapStageF {
 	return func(in knnc.ScanChan) (<-chan knnc.ScoreItem, bool) {
 		return knnc.MapStage(knnc.MapStageArgs{
-			In: in,
-			MapStagePartialArgs: knnc.MapStagePartialArgs{
-				MapFunc:       r.toMapFunc(),
-				BaseStageArgs: r.toBaseStageArgs(),
-			},
+			NWorkers:         r.args.Priority,
+			In:               in,
+			MapFunc:          r.toMapFunc(),
+			StageArgsPartial: r.toStageArgsPartial(),
 		})
 	}
 }
 
 // toFilterFunc simply converts a knnRequest into a func that can be used with
-// knnc.FilterStagePartialArgs.FilterFunc. The returned func uses the internal
+// knnc.FilterStageArgs.FilterFunc. The returned func uses the internal
 // knnRequest.args.Reject to filter out scores 'worse' than score.Score. The
 // 'worse' part (higher/lower) is dependent on knnRequest.args.Ascending. To
 // give a clearer picture of the behavior:
@@ -288,73 +337,80 @@ func (r *knnRequest) toFilterFunc() func(score knnc.ScoreItem) bool {
 	}
 }
 
-// toFilterStage simply converts a knnRequest into a func that is compatible with
-// knnc.NewPipelineArgs.FilterStage. It uses knnc.FilterStage and constructs its
-// arguments with the following:
-//  - knnc.FilterStagePartialArgs.FilterFunc = knnRequest.toFilterFunc()
-//  - knnc.FilterStagePartialArgs.BaseStageArgs = knnRequest.toBaseStageArgs()
+// toFilterStage uses the internal state in order to return a func which is
+// equivalent to knnc.FilterStage, but accepts only an input channel. The following
+// cfg is used in knnc.FilterStageArgs:
+//  - NWorkers: knnRequest.args.Priority
+//  - In: specified as args in the func returned here.
+//  - FilterFunc: knnRequest.toFilterFunc()
+//  - StageArgsPartial: knnRequest.toStageArgsPartial() 
 func (r *knnRequest) toFilterStage() filterStageF {
 	return func(in <-chan knnc.ScoreItem) (<-chan knnc.ScoreItem, bool) {
 		return knnc.FilterStage(knnc.FilterStageArgs{
-			In: in,
-			FilterStagePartialArgs: knnc.FilterStagePartialArgs{
-				FilterFunc:    r.toFilterFunc(),
-				BaseStageArgs: r.toBaseStageArgs(),
-			},
+			NWorkers:         r.args.Priority,
+			In:               in,
+			FilterFunc:       r.toFilterFunc(),
+			StageArgsPartial: r.toStageArgsPartial(),
 		})
 	}
 }
 
-// toMergeStage simply converts a knnRequest into a func that is compatible with
-// knnc.NewPipelineArgs.MergeStage. It uses knnc.MergeStage and constructs its
-// arguments with the following:
-//  - knnc.MergeStagePartialArgs.K = knnRequest.args.K
-//  - knnc.MergeStagePartialArgs.Ascending = knnRequest.args.Ascending
-//  - knnc.MergeStagePartialArgs.BaseStageArgs = knnRequest.toBaseStageArgs()
+// toMergeStage uses the internal state in order to a return a func which is 
+// equivalent to knnc.MergeStage, but accepts only an input channel. The following
+// cfg is used in knnc.MergeStageArgs:
+//  - In: specified as args in the func returned here.
+//  - K: knnRequest.args.K
+//  - Ascending: knnRequest.args.Ascending
+//  - SendInterval: knnRequest.args.K
+//  - StageArgsPartial: knnRequest.toStageArgsPartial
 func (r *knnRequest) toMergeStage() mergeStageF {
 	return func(in <-chan knnc.ScoreItem) (<-chan knnc.ScoreItems, bool) {
 		return knnc.MergeStage(knnc.MergeStageArgs{
-			In: in,
-			MergeStagePartialArgs: knnc.MergeStagePartialArgs{
-				K:             r.args.K,
-				Ascending:     r.args.Ascending,
-				SendInterval:  2, // TODO, arbitrary.
-				BaseStageArgs: r.toBaseStageArgs(),
-			},
+			In:               in,
+			K:                r.args.K,
+			Ascending:        r.args.Ascending,
+			SendInterval:     r.args.K, // TODO: rethink.
+			StageArgsPartial: r.toStageArgsPartial(),
 		})
 	}
 }
 
-// toPipeline simply converts a knnRequest into a knnc.NewPipelineArgs that is
-// fed into knnc.Pipeline, from which both the returns are returned here. The
-// args are constructed as follows:
-//  knnc.NewPipelineArgs.BaseWorkerArgs = knnRequest.toBaseWorkerArgs()
-//  knnc.NewPipelineArgs.MapStage = knnRequest.toMapStage()
-//  knnc.NewPipelineArgs.FilterStage = knnRequest.toFilterStage()
-//  knnc.NewPipelineArgs.MergeStage = knnRequest.toMergeStage()
-func (r *knnRequest) toPipeline() (*knnc.Pipeline, bool) {
-	return knnc.NewPipeline(knnc.NewPipelineArgs{
-		BaseWorkerArgs: r.toBaseWorkerArgs(),
-		MapStage:       r.toMapStage(),
-		FilterStage:    r.toFilterStage(),
-		MergeStage:     r.toMergeStage(),
-	})
+// startPipeline starts a concurrent pipeline, using the following stages:
+//  - knnRequest.toScanChan
+//  - knnRequest.toMapStage
+//  - knnRequest.toFilterStage
+//  - knnRequest.toMergeStage
+func (r *knnRequest) startPipeline(ss *knnc.SearchSpaces) (<-chan knnc.ScoreItems, bool) {
+	chScan, ok := r.toScanChan(ss)
+	if !ok {
+		return nil, false
+	}
+
+	chMap, ok := r.toMapStage()(chScan)
+	if !ok {
+		return nil, false
+	}
+
+	chFilter, ok := r.toFilterStage()(chMap)
+	if !ok {
+		return nil, false
+	}
+
+	chMerge, ok := r.toMergeStage()(chFilter)
+	if !ok {
+		return nil, false
+	}
+
+	return chMerge, true
 }
 
-// consume tries to create a pkg/knnc pipeline, send knnRequest.args (KNNArgs)
-// through it, then forward the result to knnRequest.enqueueResult.Pipe. Fail
-// cases are (where r=this instance of knnRequest):
-//  - 1 r.Ok() == false
-//  - 2 r.enqueueResult.Pipe == nil
-//  - 3 r.enqueueResylt.Cancel == nil
-//  - 4 (arg) ss.Scan(...) failed (using r.args.Extent and r.toBaseStageARgs())
-//  - 5 r.toPipeline() returned false
-//
-// In all cases, the r.enqueueResult.Pipe chan will be closed. In case 5,
-// r.enqueueResult.Cancel will be cancelled.
-//
-// Additionally, this method also uses the r.args.Accept field to abort a search
-// when enough (r.args.K) elements of sufficient quality are found.
+// consume tries to use knnRequest.args in order to produce a knn result, using
+// knnRequest.startPipeline (functionality of pkg/knnc), which are then forwarded 
+// to knnRequest.enqueueResult.Pipe (closed on completion/fail). Fail cases are:
+//  - knnRequest.Ok() return false
+//  - knnRequest.enqueueResult.Pipe == nil
+//  - knnRequest.enqueueResult.Cancel == nil
+//  - knnRequest.startPipeline() returns false
 func (r *knnRequest) consume(ss *knnc.SearchSpaces) bool {
 	defer close(r.enqueueResult.Pipe)
 
@@ -368,54 +424,34 @@ func (r *knnRequest) consume(ss *knnc.SearchSpaces) bool {
 		return false
 	}
 
-	// Try start scan(ners).
-	scanChans, ok := ss.Scan(knnc.SearchSpacesScanArgs{
-		Extent:        r.args.Extent,
-		BaseStageArgs: r.toBaseStageArgs(),
-	})
+	chScoreItems, ok := r.startPipeline(ss)
 	if !ok {
 		return false
 	}
 
-	// Try start pipeline.
-	pipeline, ok := r.toPipeline()
-	if !ok {
-		// Setup of at least one stage (in toPipeline) failed, kill all of them,
-		// including the scanner in the previous block.
-		r.enqueueResult.Cancel.Cancel()
-		return false
-	}
+	result := make(knnc.ScoreItems, r.args.K)
+	// As a way of breaking outer loop from inner.
+	func() {
+		for scoreItems := range chScoreItems {
+			for _, scoreItem := range scoreItems {
+				// Mechanism for stopping the query when r.K amount of scores
+				// are found with better than r.Accept scores.
+				// TODO: move this to knnc.MergeStage.
+				worst := result[len(result)-1]
+				done := false
+				done = done || worst.Score <= r.args.Accept && r.args.Ascending
+				done = done || worst.Score >= r.args.Accept && !r.args.Ascending
 
-	// Push faucet -> pipeline.
-	go func() {
-		defer pipeline.WaitThenClose()
-		for scanChan := range scanChans {
-			if !pipeline.AddScanner(scanChan) {
-				return
+				// done && worst.Set = true if there are k results and all of them
+				// satisfy the qi.request.Accept scores. !(true) = stop.
+				if done && worst.Set {
+					r.enqueueResult.Cancel()
+					return
+				}
+				result.BubbleInsert(scoreItem, r.args.Ascending)
 			}
 		}
 	}()
-
-	result := make(knnc.ScoreItems, r.args.K)
-	pipeline.ConsumeIter(func(scoreItems knnc.ScoreItems) bool {
-		for _, scoreItem := range scoreItems {
-			// Mechanism for stopping the query when r.K amoung of scores
-			// are found with better than r.Accept scores.
-			worst := result[len(result)-1]
-			done := false
-			done = done || worst.Score <= r.args.Accept && r.args.Ascending
-			done = done || worst.Score >= r.args.Accept && !r.args.Ascending
-
-			// done && worst.Set = true if there are k results and all of them
-			// satisfy the qi.request.Accept scores. !(true) = stop.
-			if done && worst.Set {
-				r.enqueueResult.Cancel.Cancel()
-				return false
-			}
-			result.BubbleInsert(scoreItem, r.args.Ascending)
-		}
-		return true
-	})
 
 	r.enqueueResult.Pipe <- result
 	return true

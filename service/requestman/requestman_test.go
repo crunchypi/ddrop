@@ -3,7 +3,6 @@ package requestman
 import (
 	"context"
 	"math/rand"
-	"runtime"
 	"testing"
 	"time"
 
@@ -114,9 +113,8 @@ func TestHandleKNN(t *testing.T) {
 	maxConcurrent := 100
 
 	ctx, ctxCancel := context.WithCancel(context.Background())
+    defer ctxCancel()
 	h := newTestHandle(nData, maxConcurrent, ctx)
-
-	nGoroutines := runtime.NumGoroutine()
 
 	// Add some data.
 	for i := 0; i < nData; i++ {
@@ -157,14 +155,5 @@ func TestHandleKNN(t *testing.T) {
 		if len(r.Trim()) == 0 {
 			t.Fatal("one KNN request got 0 result items.")
 		}
-	}
-
-	ctxCancel()
-	// Check leaks.
-	runtime.GC()
-	if nGoroutines != runtime.NumGoroutine() {
-		s := "number of goroutines at the end of this test is not the"
-		s += " same as at the start; possible leak. Want %v, have %v."
-		t.Fatalf(s, nGoroutines, runtime.NumGoroutine())
 	}
 }

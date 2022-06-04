@@ -1,11 +1,14 @@
 package knnc
 
 import (
+	"context"
 	"math"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/crunchypi/ddrop/pkg/mathx"
+	"github.com/crunchypi/ddrop/pkg/syncx"
 )
 
 /*
@@ -145,23 +148,23 @@ type SearchSpaceScanArgs struct {
 	// Extend refers to the search extent. 1=scan whole searchspace, 0.5=half.
 	// Must be >= 0.0 and <= 1.0.
 	Extent float64
-	BaseWorkerArgs
+	syncx.StageArgsPartial
 }
 
 // Ok validates SearchSpaceScanArgs. Returns true iff:
-//	(1) args.Extent > 0.0 and <= 1.0.
-//	(2) Embedded BaseWorkerArgs.Ok() is true.
+//  - args.Extent > 0.0 and <= 1.0.
+//  - args.StageArgsPartial.Ok() is true.
 func (args *SearchSpaceScanArgs) Ok() bool {
-	return boolsOk([]bool{
-		// Not strinctly needed but is an indicator of logic flaw.
-		args.Extent > 0.0 && args.Extent <= 1.0,
-		args.BaseWorkerArgs.Ok(),
-	})
+	ok := true
+	ok = ok && args.Extent > 0.0
+	ok = ok && args.Extent <= 1.0
+	ok = ok && args.StageArgsPartial.Ok()
+	return ok
 }
 
 // Scan starts a scanner worker which scans the SearchSpace (i.e not blocking).
 // Returns is (ScanChan, true) if args.Ok() == true, else return is (nil, false).
-// See SearchSpaceScanArgs and BaseWorkerArgs (embedded in ScanArgs) for details.
+// See SearchSpaceScanArgs and syncx.StageArgsPartial for more details.
 // Note, scanner uses 'read mutex', so will not block multiple concurrent scans.
 func (ss *SearchSpace) Scan(args SearchSpaceScanArgs) (ScanChan, bool) {
 	if !args.Ok() {
@@ -169,16 +172,19 @@ func (ss *SearchSpace) Scan(args SearchSpaceScanArgs) (ScanChan, bool) {
 	}
 
 	out := make(chan ScanItem, args.Buf)
-	deadlineSignal, deadlineSignalCancel := args.DeadlineSignal()
-	defer deadlineSignalCancel.Cancel()
+	ctx, ctxCancel := context.WithDeadline(args.Ctx, time.Now().Add(args.TTL))
 
 	go func() {
-		defer close(out)
 		ss.mx.RLock()
-		defer ss.mx.RUnlock()
-		if args.UnsafeDoneCallback != nil {
-			defer args.UnsafeDoneCallback()
-		}
+		// Cleanup, one single defer for readability.
+		defer func() {
+			if args.UnsafeDoneCallback != nil {
+				args.UnsafeDoneCallback()
+			}
+			ss.mx.RUnlock()
+			close(out)
+			ctxCancel()
+		}()
 
 		// Adjusted loop iteration to accommodate the specified search extent.
 		l := len(ss.items)
@@ -192,13 +198,15 @@ func (ss *SearchSpace) Scan(args SearchSpaceScanArgs) (ScanChan, bool) {
 		i := 0
 		for i < l {
 			distancer := ss.items[i].Distancer()
+
 			// != nil does not work as expected.
 			if !(distancer == nil || reflect.ValueOf(distancer).IsNil()) {
-				select {
-				case out <- ScanItem{Distancer: distancer}:
-				case <-args.Cancel.c:
-					return
-				case <-deadlineSignal.c:
+				ok := syncx.ChanSend(syncx.ChanSendArgs[ScanItem]{
+					Out: out,
+					Ctx: ctx,
+					Elm: ScanItem{Distancer: distancer},
+				})
+				if !ok {
 					return
 				}
 			}

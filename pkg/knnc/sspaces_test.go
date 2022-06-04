@@ -1,11 +1,14 @@
 package knnc
 
 import (
+	"context"
 	"reflect"
 	"runtime"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/crunchypi/ddrop/pkg/syncx"
 )
 
 func TestSearchSpacesAddSearchable(t *testing.T) {
@@ -108,29 +111,27 @@ func TestSearchSpacesScanOutputCorrectness(t *testing.T) {
 	}
 
 	scanArgs := SearchSpacesScanArgs{
-		Extent: 1.,
-		BaseStageArgs: BaseStageArgs{
-			NWorkers: 10, // Should not matter.
-			BaseWorkerArgs: BaseWorkerArgs{
-				Buf:    10,
-				Cancel: NewCancelSignal(),
-				TTL:    time.Second,
+		NWorkers: 10, // Should not matter.
+		SearchSpaceScanArgs: SearchSpaceScanArgs{
+			Extent: 1,
+			StageArgsPartial: syncx.StageArgsPartial{
+				Ctx: context.Background(),
+				TTL: time.Second * 10,
+				Buf: 1,
 			},
 		},
 	}
 
-	scanChans, _ := ss.Scan(scanArgs)
+	scanChan, _ := ss.Scan(scanArgs)
 	results := make(map[float64]bool)
-	for scanChan := range scanChans {
-		for scanItem := range scanChan {
-			element, _ := scanItem.Distancer.Peek(0)
+	for scanItem := range scanChan {
+		element, _ := scanItem.Distancer.Peek(0)
 
-			_, exists := results[element]
-			if exists {
-				t.Fatal("extracted duplicate from SearchSpaces.Scan:", element)
-			}
-			results[element] = true
+		_, exists := results[element]
+		if exists {
+			t.Fatal("extracted duplicate from SearchSpaces.Scan:", element)
 		}
+		results[element] = true
 	}
 
 	//  Check that all 'vectors' are accounted for.
@@ -147,14 +148,14 @@ func TestSearchSpacesScanOutputCorrectness(t *testing.T) {
 func TestSearchSpacesScanInternalBehaviourCorrectness(t *testing.T) {
 	startGoroutineN := runtime.NumGoroutine()
 
-	nWorkers := 10
-	nSearchSpaces := nWorkers * 10
-	nDistancers := nSearchSpaces * 10
+	nWorkers := 100
+	nSearchSpaces := nWorkers * 5
+	nDistancers := nSearchSpaces * 5
 
-	// account for the goroutines running the Scan method itself and the
-	// goroutine in it that is used for the deadline signal.
-	overhead := 2
-	expectedMax := startGoroutineN + overhead + (nWorkers)
+	// Account for the goroutines running the Scan method itself and the
+	// chaining of scan chans
+	overhead := 1 + nWorkers
+	expectedMax := startGoroutineN + overhead + nWorkers
 
 	// Used to check if the scanner actually goes up to expectedMax.
 	lowestN := 0
@@ -180,23 +181,22 @@ func TestSearchSpacesScanInternalBehaviourCorrectness(t *testing.T) {
 	}
 
 	scanArgs := SearchSpacesScanArgs{
-		Extent: 1.,
-		BaseStageArgs: BaseStageArgs{
-			NWorkers: nWorkers,
-			BaseWorkerArgs: BaseWorkerArgs{
-				Buf:    10,
-				Cancel: NewCancelSignal(),
-				TTL:    time.Second,
+		NWorkers: nWorkers,
+		SearchSpaceScanArgs: SearchSpaceScanArgs{
+			Extent: 1,
+			StageArgsPartial: syncx.StageArgsPartial{
+				Ctx: context.Background(),
+				TTL: time.Second,
+				Buf: 1,
 			},
 		},
 	}
 
-	scanChans, _ := ss.Scan(scanArgs)
-	for scanChan := range scanChans {
+	scanChan, _ := ss.Scan(scanArgs)
+	for range scanChan {
 		// This is the point of the test; verify that the number of concurrent
 		// goroutines does not exceed nWorkers. Not necessary to do it in the
 		// scoreItem loop below.
-
 		runtime.GC() // The GC can lag, so force it now.
 
 		current := runtime.NumGoroutine()
@@ -208,32 +208,12 @@ func TestSearchSpacesScanInternalBehaviourCorrectness(t *testing.T) {
 			s := "SearchSpaces.Scan exceeded expected goroutines by %v. total=%v"
 			t.Fatalf(s, current-expectedMax, current)
 		}
-
-		// Just drain without using val.
-		for range scanChan {
-		}
 	}
 
 	if lowestN != expectedMax {
 		t.Fatalf("expected num goroutines was not reached. had: %v, wanted:%v",
 			lowestN, expectedMax)
 	}
-
-	// TODO: The block below has unexpected behavior, i.e it works on one machine
-	// but not on another. The block simply checks if current number of goroutines
-	// is the same as at the start of the test. The start of the test _should_ be
-	// 2, and that should be the same as calling runtime.NumGoroutine() now. But
-	// for some reason, the start of the test has 4. Might be a go config thing
-	// but i'm leaving this unresolved for now.
-
-	// Give time for goroutines to end and gc to do it's thing.
-	/*
-		runtime.GC()
-		time.Sleep(time.Millisecond * 200)
-		if startGoroutineN != runtime.NumGoroutine() {
-			t.Fatal("test start & end have neq amount of active goroutines", runtime.NumGoroutine())
-		}
-	*/
 }
 
 // Test covers the cleaning functionality of SearchSpaces.StartMaintenance.

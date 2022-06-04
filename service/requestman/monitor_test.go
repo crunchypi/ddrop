@@ -1,6 +1,7 @@
 package requestman
 
 import (
+	"context"
 	"math/rand"
 	"runtime"
 	"sync"
@@ -377,9 +378,11 @@ func TestMonitorRegister(t *testing.T) {
 	go func() {
 		defer close(enqueueResultsDuo)
 		for i := 0; i < n; i++ {
+
+			_, ctxCancel := context.WithCancel(context.Background())
 			enqRNew := KNNEnqueueResult{
 				Pipe:   make(chan knnc.ScoreItems, 1),
-				Cancel: knnc.NewCancelSignal(),
+				Cancel: ctxCancel,
 			}
 			enqueueResultsDuo <- enqResultDuo{
 				raw: enqRNew,

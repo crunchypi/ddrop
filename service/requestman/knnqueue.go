@@ -50,9 +50,11 @@ func (qi *knnQueueItem) process() {
 	}
 
 	// Might have been cancelled while in queue.
-	if qi.request.enqueueResult.Cancel.Cancelled() {
+	select {
+	case <-qi.request.enqueueResultCtx.Done():
 		close(qi.request.enqueueResult.Pipe)
 		return
+	default:
 	}
 
 	// Check that time waited in queue + estimated query time does not exceed

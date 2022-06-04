@@ -21,16 +21,6 @@ type DistancerContainer interface {
 	Distancer() mathx.Distancer
 }
 
-// boolsOk returns true if all bools in the slice are true.
-func boolsOk(bs []bool) bool {
-	for _, b := range bs {
-		if !b {
-			return false
-		}
-	}
-	return true
-}
-
 type ScoreItem struct {
 	Distancer Distancer
 	// Score is the 'distance' between a query vec and a neighbor candidate.

@@ -310,5 +310,5 @@ func (i *info) KNNQueryLatency(k string, d time.Duration) (time.Duration, bool) 
 // The reason for this is that 'start' and 'end' is relative to the internal
 // linked list where 'head' and 'tail' is in reverse chronological order.
 func (i *info) KNNMonitor(start, end time.Time) KNNMonItemAvg {
-    return i.h.monitor.average(start, end)
+	return i.h.monitor.average(start, end)
 }
