@@ -90,10 +90,7 @@ func (i *SInfo) KNNLatency(args SArgs[KNNLatencyArgs], resp *SResp[KNNLatencyRes
 // the internal requestman.Handle.Info(). See docs for that for more details.
 func (i *SInfo) KNNMonitor(args SArgs[KNNMonArgs], resp *SResp[rman.KNNMonItemAvg]) error {
 	resp.RecvTime = time.Now()
-	resp.Payload = i.rManHandle.Info().KNNMonitor(
-		args.Payload.Start,
-		args.Payload.End,
-	)
+	resp.Payload = i.rManHandle.Info().KNNMonitor(args.Payload.Period)
 
 	return nil
 }

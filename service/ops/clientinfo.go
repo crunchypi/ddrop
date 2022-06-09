@@ -186,17 +186,8 @@ func (ci *CInfo) KNNLatency(args KNNLatencyArgs) *ClientResult[KNNLatencyResp] {
 }
 
 // KNNMonArgs is intended for CInfo.KNNMonitor
-//
-// Start (and End) times are used as bounds for what monitoring data to
-// include. Do note that "end" represents how far back in time to go, while
-// "start" represents the offset. So to get records for the last minute:
-// - Start: time.Now()
-// - End  : time.Now().Add(-time.Minute)
 type KNNMonArgs struct {
-	// Start of record.
-	Start time.Time
-	// End of record, how far to go back in time relative to "Start".
-	End time.Time
+	Period time.Duration
 }
 
 // KNNMonitor tries to get monitoring data related to KNN queries from the remote

@@ -111,9 +111,9 @@ func (r *KNNArgs) Ok() bool {
 type KNNEnqueueResult struct {
 	// Pipe is the destination of a KNN request/query.
 	Pipe chan knnc.ScoreItems
-    // Cancel can be used to cancel a request. This is done automatically
-    // with KNNArgs.TTL when making a query, but the cancel func should
-    // be called nontheless.
+	// Cancel can be used to cancel a request. This is done automatically
+	// with KNNArgs.TTL when making a query, but the cancel func should
+	// be called nontheless.
 	Cancel context.CancelFunc
 }
 
@@ -343,7 +343,7 @@ func (r *knnRequest) toFilterFunc() func(score knnc.ScoreItem) bool {
 //  - NWorkers: knnRequest.args.Priority
 //  - In: specified as args in the func returned here.
 //  - FilterFunc: knnRequest.toFilterFunc()
-//  - StageArgsPartial: knnRequest.toStageArgsPartial() 
+//  - StageArgsPartial: knnRequest.toStageArgsPartial()
 func (r *knnRequest) toFilterStage() filterStageF {
 	return func(in <-chan knnc.ScoreItem) (<-chan knnc.ScoreItem, bool) {
 		return knnc.FilterStage(knnc.FilterStageArgs{
@@ -355,7 +355,7 @@ func (r *knnRequest) toFilterStage() filterStageF {
 	}
 }
 
-// toMergeStage uses the internal state in order to a return a func which is 
+// toMergeStage uses the internal state in order to a return a func which is
 // equivalent to knnc.MergeStage, but accepts only an input channel. The following
 // cfg is used in knnc.MergeStageArgs:
 //  - In: specified as args in the func returned here.
@@ -405,7 +405,7 @@ func (r *knnRequest) startPipeline(ss *knnc.SearchSpaces) (<-chan knnc.ScoreItem
 }
 
 // consume tries to use knnRequest.args in order to produce a knn result, using
-// knnRequest.startPipeline (functionality of pkg/knnc), which are then forwarded 
+// knnRequest.startPipeline (functionality of pkg/knnc), which are then forwarded
 // to knnRequest.enqueueResult.Pipe (closed on completion/fail). Fail cases are:
 //  - knnRequest.Ok() return false
 //  - knnRequest.enqueueResult.Pipe == nil

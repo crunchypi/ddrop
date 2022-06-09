@@ -147,8 +147,8 @@ type requestMananagerMeta struct {
 	knnQueueMaxConcurrent int
 
 	newSearchSpaceArgs    knnc.NewSearchSpacesArgs
-	newLatencyTrackerArgs timex.NewLatencyTrackerArgs
-	newKNNMonitorArgs     timex.NewLatencyTrackerArgs
+	newLatencyTrackerArgs timex.EventTrackerConfig
+	newKNNMonitorArgs     timex.EventTrackerConfig
 }
 
 // randKNNArgs defers the call to randKNNArgs(...) func in this pkg, using
@@ -159,22 +159,21 @@ func (m *requestMananagerMeta) randKNNArgs() rman.KNNArgs {
 
 // newRequestManagerMeta is a factory func.
 // It sets fiels as follows:
-// - namespace                              : "test",
-// - poolVecDim                             : 50,
+//  - namespace                              : "test",
+//  - poolVecDim                             : 50,
 //
-// - knnQueueBuf                            : 100,
-// - knnQueueMaxConcurrent                  : 100,
+//  - knnQueueBuf                            : 100,
+//  - knnQueueMaxConcurrent                  : 100,
 //
-// - newSearchSpaceArgs.SearchSpaceMaxCap   : 10k.
-// - newSearchSpaceArgs.MaxN                : 10k,
-// - newSearchSpaceMaitenanceTaskInterval   : 100ms,
+//  - newSearchSpaceArgs.SearchSpaceMaxCap   : 10k.
+//  - newSearchSpaceArgs.MaxN                : 10k,
+//  - newSearchSpaceMaitenanceTaskInterval   : 100ms,
 //
-// - newLatencyTrackerArgs.MaxChainLinkN    : 10,
-// - newLatencyTrackerArgs.MinChainLinkSize : 100ms,
-// - newLatencyTrackerArgs.StandardPeriod   : 1s,
+//  - newLatencyTrackerArgs.MaxN             : 10,
+//  - newLatencyTrackerArgs.MinStep          : 100ms,
 //
-// - newKNNMonitor.MaxChainLinkN            : 10,
-// - newKNNMonitor.MinChainLinkSize         : 1s,
+//  - newKNNMonitor.MaxChainLinkN            : 10,
+//  - newKNNMonitor.MinChainLinkSize         : 1s,
 //
 func newRequestManagerMeta() *requestMananagerMeta {
 	newSearchSpaceArgs := knnc.NewSearchSpacesArgs{
@@ -183,10 +182,9 @@ func newRequestManagerMeta() *requestMananagerMeta {
 		MaintenanceTaskInterval: time.Millisecond * 100,
 	}
 
-	newLatencyTrackerArgs := timex.NewLatencyTrackerArgs{
-		MaxChainLinkN:    10,
-		MinChainLinkSize: time.Millisecond * 100,
-		StandardPeriod:   time.Second,
+	newLatencyTrackerArgs := timex.EventTrackerConfig{
+		MaxN:    10,
+		MinStep: time.Millisecond * 100,
 	}
 
 	return &requestMananagerMeta{

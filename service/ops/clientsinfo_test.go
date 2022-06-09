@@ -268,8 +268,7 @@ func TestCompositeInfoKNNMonitor(t *testing.T) {
 		wg.Wait()
 
 		ch := NewClients(tn.addrs).Info().KNNMonitor(KNNMonArgs{
-			Start: time.Now(),
-			End:   time.Now().Add(-time.Minute),
+			Period: time.Minute,
 		})
 
 		// Check amt. for results.

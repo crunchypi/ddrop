@@ -11,19 +11,6 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-func latencyTrackerLen(lt *LatencyTracker) int {
-	lt.RLock()
-	nLinks := 0
-	current := lt.head
-	for current != nil {
-		nLinks++
-		current = current.next
-	}
-	lt.RUnlock()
-
-	return nLinks
-}
-
 // Validate that len of chained link does not exceed the specified maximum,
 // even though a duration entry is entered at a frequency that is smaller
 // than the minimum duration between each link (which is measured in time).
@@ -32,12 +19,12 @@ func TestLatencyTrackerDenseWindow(t *testing.T) {
 	maxChainLinkN := 10
 	minChainLinkSize := time.Millisecond * 5
 
-	lt := LatencyTracker{
-		cfg: NewLatencyTrackerArgs{
-			MaxChainLinkN:    maxChainLinkN,
-			MinChainLinkSize: minChainLinkSize,
+	lt, _ := NewLatencyTracker(
+		EventTrackerConfig{
+			MaxN:    maxChainLinkN,
+			MinStep: minChainLinkSize,
 		},
-	}
+	)
 
 	for i := 0; i < n; i++ {
 		done := lt.RegisterCallback()
@@ -45,7 +32,7 @@ func TestLatencyTrackerDenseWindow(t *testing.T) {
 		time.Sleep(minChainLinkSize / 2)
 		done()
 
-		nLinks := latencyTrackerLen(&lt)
+		nLinks := len(lt.et.Collect(time.Duration(maxChainLinkN) * minChainLinkSize))
 		if nLinks > maxChainLinkN {
 			t.Fatalf("len of linked list exceeded. max: %v, have: %v",
 				maxChainLinkN, nLinks)
@@ -61,12 +48,12 @@ func TestLatencyTrackerSparseWindow(t *testing.T) {
 	maxChainLinkN := 10
 	minChainLinkSize := time.Millisecond * 5
 
-	lt := LatencyTracker{
-		cfg: NewLatencyTrackerArgs{
-			MaxChainLinkN:    maxChainLinkN,
-			MinChainLinkSize: minChainLinkSize,
+	lt, _ := NewLatencyTracker(
+		EventTrackerConfig{
+			MaxN:    maxChainLinkN,
+			MinStep: minChainLinkSize,
 		},
-	}
+	)
 
 	for i := 0; i < n; i++ {
 		done := lt.RegisterCallback()
@@ -74,7 +61,7 @@ func TestLatencyTrackerSparseWindow(t *testing.T) {
 		time.Sleep(minChainLinkSize * 2)
 		done()
 
-		nLinks := latencyTrackerLen(&lt)
+		nLinks := len(lt.et.Collect(time.Duration(maxChainLinkN) * minChainLinkSize))
 		if nLinks > maxChainLinkN {
 			t.Fatalf("len of linked list exceeded. max: %v, have: %v",
 				maxChainLinkN, nLinks)
@@ -91,12 +78,12 @@ func TestLatencyTrackerFuzzedWindow(t *testing.T) {
 	maxChainLinkN := 10
 	minChainLinkSize := time.Millisecond * 5
 
-	lt := LatencyTracker{
-		cfg: NewLatencyTrackerArgs{
-			MaxChainLinkN:    maxChainLinkN,
-			MinChainLinkSize: minChainLinkSize,
+	lt, _ := NewLatencyTracker(
+		EventTrackerConfig{
+			MaxN:    maxChainLinkN,
+			MinStep: minChainLinkSize,
 		},
-	}
+	)
 
 	// Used for preventing goroutines from doing anything before all of
 	// them have started, for the purpose of factoring out the the startup
@@ -132,7 +119,7 @@ func TestLatencyTrackerFuzzedWindow(t *testing.T) {
 
 	for <-goroutineFinished {
 		// Control that the length of the chan is not exceeded.
-		nLinks := latencyTrackerLen(&lt)
+		nLinks := len(lt.et.Collect(time.Duration(maxChainLinkN) * minChainLinkSize))
 		if nLinks > maxChainLinkN {
 			t.Fatalf("len of linked list exceeded. max: %v, have: %v",
 				maxChainLinkN, nLinks)
@@ -145,12 +132,14 @@ func TestLatencyTrackerFuzzedWindow(t *testing.T) {
 func TestLatencyTrackerAverageCorrectness(t *testing.T) {
 	maxChainLinkN := 100
 	minChainLinkSize := time.Millisecond * 5
-	lt := LatencyTracker{
-		cfg: NewLatencyTrackerArgs{
-			MaxChainLinkN:    maxChainLinkN,
-			MinChainLinkSize: minChainLinkSize,
+
+	lt, _ := NewLatencyTracker(
+		EventTrackerConfig{
+			MaxN:    maxChainLinkN,
+			MinStep: minChainLinkSize,
 		},
-	}
+	)
+
 	// Should be fairly high, unless the two variables above are higher (and
 	// test is longer), since there is a lot of measurement overhead.
 	errMargin := minChainLinkSize / 10
@@ -190,12 +179,13 @@ func TestLatencyTrackerAverageCorrectness(t *testing.T) {
 func TestLatencyTrackerAverageCorrectnessFuzzed(t *testing.T) {
 	maxChainLinkN := 10
 	minChainLinkSize := time.Millisecond * 5
-	lt := LatencyTracker{
-		cfg: NewLatencyTrackerArgs{
-			MaxChainLinkN:    maxChainLinkN,
-			MinChainLinkSize: minChainLinkSize,
+
+	lt, _ := NewLatencyTracker(
+		EventTrackerConfig{
+			MaxN:    maxChainLinkN,
+			MinStep: minChainLinkSize,
 		},
-	}
+	)
 
 	errMargin := minChainLinkSize / 20
 

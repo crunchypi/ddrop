@@ -60,7 +60,10 @@ func (qi *knnQueueItem) process() {
 	// Check that time waited in queue + estimated query time does not exceed
 	// the acceptable latency / deadline.
 	queueWait := time.Now().Sub(qi.request.created)
-	queryWaitEstimation, _ := qi.nsItem.latency.AverageSTD()
+	queryWaitEstimation, _ := qi.nsItem.latency.Average(
+		qi.nsItem.latency.Cfg().MinStep *
+			time.Duration(qi.nsItem.latency.Cfg().MaxN) / 2,
+	)
 	if queueWait+queryWaitEstimation > qi.request.args.TTL {
 		close(qi.request.enqueueResult.Pipe)
 		return

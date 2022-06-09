@@ -30,17 +30,16 @@ func newTestHandle(sSpaceMaxN, knnQueueN int, ctx context.Context) *Handle {
 			SearchSpacesMaxN:        sSpaceMaxN,
 			MaintenanceTaskInterval: time.Millisecond * 100,
 		},
-		NewLatencyTrackerArgs: timex.NewLatencyTrackerArgs{
-			MaxChainLinkN:    10,
-			MinChainLinkSize: time.Millisecond * 100,
-			StandardPeriod:   time.Second,
+		NewLatencyTrackerArgs: timex.EventTrackerConfig{
+			MaxN:    10,
+			MinStep: time.Millisecond * 100,
 		},
 		KNNQueueBuf:           knnQueueN,
 		KNNQueueMaxConcurrent: knnQueueN,
 		Ctx:                   ctx,
-		NewKNNMonitorArgs: timex.NewLatencyTrackerArgs{
-			MaxChainLinkN:    1,
-			MinChainLinkSize: time.Second,
+		NewKNNMonitorArgs: timex.EventTrackerConfig{
+			MaxN:    1,
+			MinStep: time.Second,
 		},
 	})
 
@@ -113,7 +112,7 @@ func TestHandleKNN(t *testing.T) {
 	maxConcurrent := 100
 
 	ctx, ctxCancel := context.WithCancel(context.Background())
-    defer ctxCancel()
+	defer ctxCancel()
 	h := newTestHandle(nData, maxConcurrent, ctx)
 
 	// Add some data.

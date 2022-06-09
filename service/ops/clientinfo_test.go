@@ -197,10 +197,7 @@ func TestSingleInfoKNNMonitor(t *testing.T) {
 		testNode.fill(10_000)
 		testNode.makeLatency(100, time.Millisecond*10)
 
-		r := NewClient(addr).Info().KNNMonitor(KNNMonArgs{
-			Start: time.Now(),
-			End:   time.Now().Add(-time.Minute),
-		})
+		r := NewClient(addr).Info().KNNMonitor(KNNMonArgs{Period: time.Minute})
 		if r.NetErr != nil {
 			t.Fatal(r.NetErr)
 		}

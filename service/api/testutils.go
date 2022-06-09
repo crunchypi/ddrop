@@ -152,7 +152,6 @@ func newTestNode(t *testing.T) testNode {
 //
 // - newLatencyTrackerArgs.MaxChainLinkN    : 10,
 // - newLatencyTrackerArgs.MinChainLinkSize : 1s,
-// - newLatencyTrackerArgs.StandardPeriod   : 1s,
 //
 // - newKNNMonitor.MaxChainLinkN            : 10,
 // - newKNNMonitor.MinChainLinkSize         : 1s,
@@ -169,17 +168,15 @@ func (tn *testNode) startRPC() error {
 			SearchSpacesMaxN:        100,
 			MaintenanceTaskInterval: time.Second,
 		},
-		NewLatencyTrackerArgs: newLatencyTrackerArgs{
-			MaxChainLinkN:    10,
-			MinChainLinkSize: time.Second,
-			StandardPeriod:   time.Second,
+		NewLatencyTrackerArgs: eventTrackerConfig{
+			MaxN:    10,
+			MinStep: time.Second,
 		},
 		KNNQueueBuf:           100,
 		KNNQueueMaxConcurrent: 100,
-		NewKNNMonitorArgs: newLatencyTrackerArgs{
-			MaxChainLinkN:    10,
-			MinChainLinkSize: time.Second,
-			StandardPeriod:   time.Second,
+		NewKNNMonitorArgs: eventTrackerConfig{
+			MaxN:    10,
+			MinStep: time.Second,
 		},
 	}
 	s, ok := ops.NewServer(tn.addrRPC, args.export(tn.handle.ctx))

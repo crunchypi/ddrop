@@ -82,20 +82,18 @@ func (args *newSearchSpacesArgs) export() knnc.NewSearchSpacesArgs {
 	}
 }
 
-// newLatencyTrackerArgs mirrors timex.NewLatencyTrackerArgs, see docs for that
+// eventTrackerConfig  mirrors timex.EventTrackerConfig, see docs for that
 // struct for more info. This is defined seperately for struct tags.
-type newLatencyTrackerArgs struct {
-	MaxChainLinkN    int           `json:"maxChainLinkN"`
-	MinChainLinkSize time.Duration `json:"minChainLinkSize"`
-	StandardPeriod   time.Duration `json:"standardPeriod"`
+type eventTrackerConfig struct {
+	MaxN    int           `json:"maxN"`
+	MinStep time.Duration `json:"minStep"`
 }
 
 // export converts this instance into its exported equivalent in the timex pkg.
-func (args *newLatencyTrackerArgs) export() timex.NewLatencyTrackerArgs {
-	return timex.NewLatencyTrackerArgs{
-		MaxChainLinkN:    args.MaxChainLinkN,
-		MinChainLinkSize: args.MinChainLinkSize,
-		StandardPeriod:   args.StandardPeriod,
+func (args *eventTrackerConfig) export() timex.EventTrackerConfig {
+	return timex.EventTrackerConfig{
+		MaxN:    args.MaxN,
+		MinStep: args.MinStep,
 	}
 }
 
@@ -103,11 +101,11 @@ func (args *newLatencyTrackerArgs) export() timex.NewLatencyTrackerArgs {
 // see docs for that struct for more info. This is redefined for struct tags.
 // Note: The only difference is that the Ctx field is excluded (naturally).
 type newRequestManagerHandleArgs struct {
-	NewSearchSpacesArgs   newSearchSpacesArgs   `json:"newSearchSpacesArgs"`
-	NewLatencyTrackerArgs newLatencyTrackerArgs `json:"newLatencyTrackerArgs"`
-	KNNQueueBuf           int                   `json:"knnQueueBuf"`
-	KNNQueueMaxConcurrent int                   `json:"knnQueueMaxConcurrent"`
-	NewKNNMonitorArgs     newLatencyTrackerArgs `json:"newKNNMonitorArgs"`
+	NewSearchSpacesArgs   newSearchSpacesArgs `json:"newSearchSpacesArgs"`
+	NewLatencyTrackerArgs eventTrackerConfig  `json:"newLatencyTrackerArgs"`
+	KNNQueueBuf           int                 `json:"knnQueueBuf"`
+	KNNQueueMaxConcurrent int                 `json:"knnQueueMaxConcurrent"`
+	NewKNNMonitorArgs     eventTrackerConfig  `json:"newKNNMonitorArgs"`
 }
 
 // export converts this instance into its exported equivalent in the requestmanager pkg.

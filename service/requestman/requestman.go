@@ -58,7 +58,7 @@ type NewHandleArgs struct {
 	// NewLatencyTrackerArgs keeps instructions for how to create new latency
 	// trackers. This is used for the KNN request queue in T Handle, as well as
 	// for each new namespaced (KNN) search space.
-	NewLatencyTrackerArgs timex.NewLatencyTrackerArgs
+	NewLatencyTrackerArgs timex.EventTrackerConfig
 
 	// KNNQueueBuf specifies the buffer for the KNN request queue in T Handle.
 	KNNQueueBuf int
@@ -76,7 +76,7 @@ type NewHandleArgs struct {
 	// NewKNNMonitorArgs keeps instructions for how to make a new monitor.
 	// This includes same args as timex.NewLatencyArgs, as the internal
 	// data structure works the same way.
-	NewKNNMonitorArgs timex.NewLatencyTrackerArgs
+	NewKNNMonitorArgs timex.EventTrackerConfig
 }
 
 // Ok returns true if the configuration kn NewHandleArgs is acceptable.
@@ -106,6 +106,7 @@ func NewHandle(args NewHandleArgs) (*Handle, bool) {
 	}
 
 	lt, _ := timex.NewLatencyTracker(args.NewLatencyTrackerArgs)
+	et, _ := timex.NewEventTracker[KNNMonItemAvg](args.NewKNNMonitorArgs)
 	h := Handle{
 		knnNamespaces: &knnNamespaces{
 			items:                 make(map[string]knnNamespacesItem),
@@ -118,13 +119,8 @@ func NewHandle(args NewHandleArgs) (*Handle, bool) {
 			maxConcurrent: args.KNNQueueMaxConcurrent,
 			ctx:           args.Ctx,
 		},
-		ctx: args.Ctx,
-		monitor: &knnMonitor{
-			averages: &timedLinkedList[KNNMonItemAvg]{
-				maxChainLinkN:    args.NewKNNMonitorArgs.MaxChainLinkN,
-				minChainLinkSize: args.NewKNNMonitorArgs.MinChainLinkSize,
-			},
-		},
+		ctx:     args.Ctx,
+		monitor: &knnMonitor{et: *et},
 	}
 
 	go h.knnQueue.startProcessing()
@@ -193,8 +189,9 @@ func (h *Handle) KNN(args KNNArgs) (KNNEnqueueResult, bool) {
 	}
 
 	// Latency check.
-	avgQueueWait, _ := h.knnQueue.latency.AverageSTD()
-	avgQueryWait, _ := nsItem.latency.AverageSTD()
+	d := nsItem.latency.Cfg().MinStep * time.Duration(nsItem.latency.Cfg().MaxN) / 2
+	avgQueueWait, _ := h.knnQueue.latency.Average(d)
+	avgQueryWait, _ := nsItem.latency.Average(d)
 	if avgQueueWait+avgQueryWait > args.TTL {
 		return KNNEnqueueResult{}, false
 	}
@@ -300,15 +297,8 @@ func (i *info) KNNQueryLatency(k string, d time.Duration) (time.Duration, bool) 
 	return ns.latency.Average(d)
 }
 
-// KNNMonitor returns knn monitoring data for the given period. Note that
-// 'start' should be _after_ 'end', which might be counter-intuitive.
-// So to get data created the last minute:
-//
-//  now := time.Now()
-//  x.KNNMonitor(now, now.Add(-time.Minute))
-//
-// The reason for this is that 'start' and 'end' is relative to the internal
-// linked list where 'head' and 'tail' is in reverse chronological order.
-func (i *info) KNNMonitor(start, end time.Time) KNNMonItemAvg {
-	return i.h.monitor.average(start, end)
+// KNNMonitor returns the average registered knn monitor data for the time span
+// ranging between time.Now() and time.Now().Sub(period).
+func (i *info) KNNMonitor(period time.Duration) KNNMonItemAvg {
+	return i.h.monitor.average(period)
 }

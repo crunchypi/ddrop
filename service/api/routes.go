@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/crunchypi/ddrop/service/ops"
 	rman "github.com/crunchypi/ddrop/service/requestman"
@@ -386,14 +387,10 @@ func (h *handle) RPCKNNLatency(w http.ResponseWriter, r *http.Request) {
 func (h *handle) RPCKNNMonitor(w http.ResponseWriter, r *http.Request) {
 	// Payload type of return from deferred rpc call clientResult.
 	type T = knnMonItemAvg
-	withNetIO(w, r, func(opts knnMonArgs) []clientResult[T] {
+	withNetIO(w, r, func(opts time.Duration) []clientResult[T] {
 		addrs := h.addrSet.addrsMaintanedLocked()
 
-		conv := ops.KNNMonArgs{
-			Start: opts.Start,
-			End:   opts.End,
-		}
-		ch := ops.NewClients(addrs).Info().KNNMonitor(conv)
+		ch := ops.NewClients(addrs).Info().KNNMonitor(ops.KNNMonArgs{opts})
 
 		return newClientResults(ch, func(payload rman.KNNMonItemAvg) T {
 			return T{

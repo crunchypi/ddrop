@@ -132,17 +132,15 @@ func TestRPCServerStop(t *testing.T) {
 					SearchSpacesMaxN:        100,
 					MaintenanceTaskInterval: time.Second,
 				},
-				NewLatencyTrackerArgs: newLatencyTrackerArgs{
-					MaxChainLinkN:    10,
-					MinChainLinkSize: time.Second,
-					StandardPeriod:   time.Second,
+				NewLatencyTrackerArgs: eventTrackerConfig{
+					MaxN:    10,
+					MinStep: time.Second,
 				},
 				KNNQueueBuf:           100,
 				KNNQueueMaxConcurrent: 100,
-				NewKNNMonitorArgs: newLatencyTrackerArgs{
-					MaxChainLinkN:    10,
-					MinChainLinkSize: time.Second,
-					StandardPeriod:   time.Second,
+				NewKNNMonitorArgs: eventTrackerConfig{
+					MaxN:    10,
+					MinStep: time.Second,
 				},
 			}
 
@@ -206,17 +204,15 @@ func TestRPCServerStart(t *testing.T) {
 					SearchSpacesMaxN:        100,
 					MaintenanceTaskInterval: time.Second,
 				},
-				NewLatencyTrackerArgs: newLatencyTrackerArgs{
-					MaxChainLinkN:    10,
-					MinChainLinkSize: time.Second,
-					StandardPeriod:   time.Second,
+				NewLatencyTrackerArgs: eventTrackerConfig{
+					MaxN:    10,
+					MinStep: time.Second,
 				},
 				KNNQueueBuf:           100,
 				KNNQueueMaxConcurrent: 100,
-				NewKNNMonitorArgs: newLatencyTrackerArgs{
-					MaxChainLinkN:    10,
-					MinChainLinkSize: time.Second,
-					StandardPeriod:   time.Second,
+				NewKNNMonitorArgs: eventTrackerConfig{
+					MaxN:    10,
+					MinStep: time.Second,
 				},
 			}
 
@@ -530,10 +526,7 @@ func TestKNNMonitor(t *testing.T) {
 		tn.fill(namespace, nVecs, dim)
 		tn.knnFuzz(namespace, 3, dim, time.Millisecond*50)
 
-		opts := knnMonArgs{
-			Start: time.Now(),
-			End:   time.Now().Add(-time.Hour),
-		}
+		opts := time.Hour
 
 		r, err := post[[]clientResult[knnMonItemAvg]](url, opts)
 		if err != nil {

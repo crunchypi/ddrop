@@ -30,7 +30,7 @@ type knnNamespaces struct {
 	newSearchSpaceArgs knnc.NewSearchSpacesArgs
 	// newLatencyTrackerArgs keeps instructions for how to create new latency
 	// trackers that go into new namedSSPaceItems (for knnNamespaces.items)
-	newLatencyTrackerArgs timex.NewLatencyTrackerArgs
+	newLatencyTrackerArgs timex.EventTrackerConfig
 }
 
 // key returns true if a key/namespace exists.

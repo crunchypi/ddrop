@@ -12,95 +12,26 @@ import (
 	"time"
 )
 
-// latencyTrackerItem is used as node in the LatencyTracker linked list.
-type latencyTrackerItem struct {
-	created time.Time
-	// Layout: further from head = further back in time.
-	next *latencyTrackerItem
-
-	cumulativeLatency time.Duration // All the registered durations.
-	nWaiters          int           // Amount of registers.
-}
-
 // LatencyTracker is intended to track average latency for some processes during
 // certain (moving) windows of time, e.g how much latency a server response has
 // had the last minute. Note, must be set up with NewLatencyTracker(...).
 type LatencyTracker struct {
 	sync.RWMutex
-	head *latencyTrackerItem
-
-	cfg NewLatencyTrackerArgs
-}
-
-// NewLatencyTrackerArgs is to be used for the NewLatencyTracker func.
-type NewLatencyTrackerArgs struct {
-	// MaxChainLinkN specifies the max amount of links in this chain.
-	// When the number of links exceeds this, and new links are added,
-	// then old ones (at the end/tail) are dropped.
-	MaxChainLinkN int
-	// MinChainLinkSize represents the min time delta between any link.
-	// A latency tracker tracks latency during a time frame, so link
-	// sizes are measured as a time.Duration.
-	MinChainLinkSize time.Duration
-	// StandardPeriod is meant for consistency. The method LatencyTracker.Average
-	// accepts a time.Duration, but there are cases where this arg shouldn't
-	// change. As such, LatencyTracker.AverageSTD can be called, which uses
-	// this field val instead.
-	StandardPeriod time.Duration
-}
-
-// Ok returns true if the instance was set up correctly. Specifically:
-//	args.MaxChainLinkN > 0
-//	args.MinChainLinkSize > 0
-func (args *NewLatencyTrackerArgs) Ok() bool {
-	ok := true
-	ok = ok && args.MaxChainLinkN > 0
-	ok = ok && args.MinChainLinkSize > 0
-	return ok
+	et EventTracker[time.Duration]
 }
 
 // NewLatencyTracker sets up- and returns (*LatencyTracker, true) if
 // args.Ok() == true. Else, it returns (nil, false).
-func NewLatencyTracker(args NewLatencyTrackerArgs) (*LatencyTracker, bool) {
-	if !args.Ok() {
-		return nil, false
-	}
-	return &LatencyTracker{cfg: args}, true
+func NewLatencyTracker(cfg EventTrackerConfig) (*LatencyTracker, bool) {
+	return &LatencyTracker{et: EventTracker[time.Duration]{cfg: cfg}}, cfg.Ok()
 }
 
-// Config returns the internal configuration which was used when creating this
+// Cfg returns the internal configuration which was used when creating this
 // instance with NewLatencyTracker(...).
-func (lt *LatencyTracker) Config() NewLatencyTrackerArgs {
+func (lt *LatencyTracker) Cfg() EventTrackerConfig {
 	lt.Lock()
 	defer lt.Unlock()
-	return lt.cfg
-}
-
-// Try add new head and trim tail.
-// NOTE: no locking, that must be done from the caller.
-func (lt *LatencyTracker) maintain() {
-	// Handle unset.
-	if lt.head == nil {
-		lt.head = &latencyTrackerItem{created: time.Now()}
-	}
-
-	// New head if enough time has passed.
-	// Layout: further from head = further back in time.
-	if time.Now().Sub(lt.head.created) >= lt.cfg.MinChainLinkSize {
-		lt.head = &latencyTrackerItem{created: time.Now(), next: lt.head}
-	}
-
-	// Trim tail.
-	current := lt.head
-	n := 1
-	for current != nil {
-		if n >= lt.cfg.MaxChainLinkN {
-			current.next = nil
-			return
-		}
-		current = current.next
-		n++
-	}
+	return lt.et.cfg
 }
 
 // Register registers some latency. Specifically, it adds the delta to a node
@@ -110,11 +41,9 @@ func (lt *LatencyTracker) Register(delta time.Duration) {
 	lt.Lock()
 	defer lt.Unlock()
 
-	lt.maintain()
-
-	// Add new deltas.
-	lt.head.cumulativeLatency += delta
-	lt.head.nWaiters++
+	lt.et.Register(func(created time.Time, n int, d time.Duration) time.Duration {
+		return d + delta
+	})
 }
 
 // RegisterCallback is a convenience method around LatencyTracker.Register(...).
@@ -141,22 +70,22 @@ func (lt *LatencyTracker) Average(period time.Duration) (time.Duration, bool) {
 	lt.RLock()
 	defer lt.RUnlock()
 
-	lt.maintain()
-
-	maxDuration := lt.cfg.MinChainLinkSize * time.Duration(lt.cfg.MaxChainLinkN)
+	maxDuration := lt.et.cfg.MinStep * time.Duration(lt.et.cfg.MaxN)
 	withinBounds := period <= maxDuration
 
 	var cumulativeWait time.Duration
 	var nWaiters int
 
-	// Traverse and add.
-	current := lt.head
-	for current != nil && stamp.Sub(current.created) <= period {
-		cumulativeWait += current.cumulativeLatency
-		nWaiters += current.nWaiters
+	lt.et.Iter(func(i int, item *EventTrackerItem[time.Duration]) bool {
+		include := stamp.Sub(item.Created) <= period
+		// Don't include out of duration bounds.
+		if include {
+			cumulativeWait += item.Payload
+			nWaiters += item.N
+		}
+		return include
 
-		current = current.next
-	}
+	})
 
 	// Guard zero div.
 	if nWaiters == 0 {
@@ -165,10 +94,5 @@ func (lt *LatencyTracker) Average(period time.Duration) (time.Duration, bool) {
 
 	average := cumulativeWait / time.Duration(nWaiters)
 	return average, withinBounds
-}
 
-// AverageSTD is equivalent to lt.Average(x) where x is the StandardPeriod field
-// of NewLatencyTrackerArgs (used when setting up this instance).
-func (lt *LatencyTracker) AverageSTD() (time.Duration, bool) {
-	return lt.Average(lt.cfg.StandardPeriod)
 }
