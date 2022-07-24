@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -28,13 +29,14 @@ func main() {
 		flag.PrintDefaults()
 	}
 
-	addr := *flag.String("addr", "localhost:8080",
+	addr := flag.String("addr", "localhost:80",
 		"Specify the http server address",
 	)
-	ioTimeout := *flag.Int("io-timeout", 10,
+	ioTimeout := flag.Int("io-timeout", 10,
 		"Specify in seconds the http server's read/write timeout",
 	)
 
+    
 	flag.Parse()
 
 	ctx, _ := signal.NotifyContext(
@@ -43,16 +45,21 @@ func main() {
 		syscall.SIGTERM,
 		syscall.SIGINT,
 	)
-	api.StartServer(api.StartServerArgs{
-		Addr:                   addr,
+    _, err := api.StartServer(api.StartServerArgs{
+		Addr:                   *addr,
 		Ctx:                    ctx,
-		ReadTimeout:            time.Second * time.Duration(ioTimeout),
-		WriteTimeout:           time.Second * time.Duration(ioTimeout),
+		ReadTimeout:            time.Second * time.Duration(*ioTimeout),
+		WriteTimeout:           time.Second * time.Duration(*ioTimeout),
 		UpdateFrequencyAddrSet: time.Second * 10,
 		OnStart: func() {
-			fmt.Printf("started listening on addr '%s'\n", addr)
+			log.Printf("started listening on addr '%s'\n", *addr)
 		},
 	})
 
-	fmt.Println("\nstopped")
+    if err != nil {
+        log.Fatal(err)
+        
+    }
+
+	log.Println("\nstopped")
 }
